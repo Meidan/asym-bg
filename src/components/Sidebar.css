@@ -1,0 +1,268 @@
+.sidebar {
+  background: linear-gradient(135deg, var(--surface), var(--wood-dark));
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  padding: var(--spacing-xl);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xl);
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+}
+
+.sidebar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sidebar::-webkit-scrollbar-track {
+  background: var(--wood-dark);
+  border-radius: 4px;
+}
+
+.sidebar::-webkit-scrollbar-thumb {
+  background: var(--gold-dark);
+  border-radius: 4px;
+}
+
+.sidebar::-webkit-scrollbar-thumb:hover {
+  background: var(--gold);
+}
+
+.sidebar-section {
+  padding-bottom: var(--spacing-lg);
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-section:last-child {
+  border-bottom: none;
+}
+
+.sidebar-title {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--gold);
+  margin-bottom: var(--spacing-lg);
+  letter-spacing: 0.05em;
+}
+
+.sidebar-subtitle {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--gold-light);
+  margin-bottom: var(--spacing-md);
+}
+
+.variant-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.btn-variant {
+  justify-content: flex-start;
+  text-align: left;
+  font-size: 0.875rem;
+}
+
+.btn-variant-active {
+  background: linear-gradient(135deg, var(--gold), var(--gold-dark));
+  color: var(--wood-dark);
+  border-color: var(--gold-light);
+}
+
+.roles-section {
+  animation: roles-appear 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes roles-appear {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.role-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.role-card {
+  background: linear-gradient(135deg, var(--wood-medium), var(--wood-dark));
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  padding: var(--spacing-md);
+  transition: all 0.2s ease;
+}
+
+.role-card:hover {
+  border-color: var(--gold-dark);
+  transform: translateX(4px);
+}
+
+.role-card.role-white {
+  border-left: 4px solid var(--checker-white);
+}
+
+.role-card.role-black {
+  border-left: 4px solid var(--checker-black);
+}
+
+.role-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--gold-light);
+  margin-bottom: var(--spacing-xs);
+  letter-spacing: 0.05em;
+}
+
+.role-player {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: var(--spacing-sm);
+}
+
+.role-description {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-md);
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.info-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--gold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.info-value {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.checkers-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.checker-status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.checker-status-label {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.checker-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.checker-dot.checker-white {
+  background: radial-gradient(ellipse at 30% 30%, var(--checker-white), var(--checker-white-shadow));
+  border: 1px solid var(--checker-white-shadow);
+}
+
+.checker-dot.checker-black {
+  background: radial-gradient(ellipse at 30% 30%, #3a3634, var(--checker-black));
+  border: 1px solid var(--checker-black-shadow);
+}
+
+.checker-status-value {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  padding-left: calc(16px + var(--spacing-sm));
+}
+
+.btn-rules {
+  width: 100%;
+}
+
+.rules-content {
+  margin-top: var(--spacing-md);
+  padding: var(--spacing-md);
+  background: rgba(26, 77, 46, 0.1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+  animation: rules-expand 0.3s ease;
+}
+
+@keyframes rules-expand {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 500px;
+  }
+}
+
+.rules-content h4 {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 1.125rem;
+  color: var(--gold-light);
+  margin-bottom: var(--spacing-sm);
+}
+
+.rules-content p {
+  margin: var(--spacing-sm) 0;
+}
+
+.rules-content ul {
+  margin: var(--spacing-sm) 0;
+  padding-left: var(--spacing-lg);
+}
+
+.rules-content li {
+  margin: var(--spacing-xs) 0;
+}
+
+.rules-content strong {
+  color: var(--gold);
+  font-weight: 600;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+  .sidebar {
+    max-height: none;
+  }
+}

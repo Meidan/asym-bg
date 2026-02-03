@@ -1,0 +1,236 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Jost:wght@300;400;500&display=swap');
+
+:root {
+  /* Luxury wood tones */
+  --wood-dark: #2a1810;
+  --wood-medium: #4a2c1f;
+  --wood-light: #6b4423;
+  --wood-highlight: #8b5e3c;
+  
+  /* Felt/cloth */
+  --felt-green: #1a4d2e;
+  --felt-shadow: #0f2818;
+  
+  /* Checker colors */
+  --checker-white: #f5f1e8;
+  --checker-white-shadow: #d4cfc4;
+  --checker-black: #1a1614;
+  --checker-black-shadow: #0a0806;
+  
+  /* Accent colors */
+  --gold: #d4af37;
+  --gold-light: #f4d673;
+  --gold-dark: #b8941f;
+  
+  /* UI */
+  --bg: #0f0d0a;
+  --surface: #1a1614;
+  --border: #3a332c;
+  --text: #f5f1e8;
+  --text-muted: #a49a8e;
+  
+  /* Spacing */
+  --spacing-xs: 0.25rem;
+  --spacing-sm: 0.5rem;
+  --spacing-md: 1rem;
+  --spacing-lg: 1.5rem;
+  --spacing-xl: 2rem;
+}
+
+.player-badge {
+  background: var(--gold);
+  color: var(--wood-dark);
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Jost', sans-serif;
+  background: linear-gradient(135deg, var(--bg) 0%, #1a1210 100%);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: var(--spacing-lg);
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-xl);
+  padding-bottom: var(--spacing-lg);
+  border-bottom: 2px solid var(--border);
+}
+
+.app-title {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 3rem;
+  font-weight: 700;
+  color: var(--gold);
+  letter-spacing: 0.05em;
+  text-shadow: 0 2px 8px rgba(212, 175, 55, 0.3);
+  margin: 0;
+}
+
+.variant-badge {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: linear-gradient(135deg, var(--wood-medium), var(--wood-dark));
+  border: 1px solid var(--gold-dark);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--gold-light);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.app-content {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: var(--spacing-xl);
+  flex: 1;
+}
+
+.game-area {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: var(--spacing-lg);
+  align-items: start;
+}
+
+/* Common button styles */
+.btn {
+  padding: var(--spacing-md) var(--spacing-lg);
+  border: none;
+  border-radius: 8px;
+  font-family: 'Jost', sans-serif;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--gold), var(--gold-dark));
+  color: var(--wood-dark);
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(212, 175, 55, 0.3);
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, var(--gold-light), var(--gold));
+}
+
+.btn-secondary {
+  background: var(--wood-medium);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+  background: var(--wood-light);
+  border-color: var(--gold-dark);
+}
+
+.btn-icon {
+  font-size: 1.25rem;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+  .app-content {
+    grid-template-columns: 1fr;
+  }
+
+  .game-area {
+    grid-template-columns: 1fr;
+  }
+  
+  .app-title {
+    font-size: 2rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .app {
+    padding: var(--spacing-md);
+  }
+  
+  .app-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+.match-info {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.match-score {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 2rem;
+  font-weight: 700;
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+}
+
+.score-white {
+  color: var(--checker-white);
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.score-black {
+  color: var(--checker-black);
+  text-shadow: 1px 1px 2px rgba(255, 255, 255, 0.3);
+}
+
+.score-separator {
+  color: var(--gold);
+  margin: 0 0.25rem;
+}
+
+.score-target {
+  font-size: 1rem;
+  color: var(--wood-medium);
+  margin-left: 0.5rem;
+}
+
+.game-number {
+  font-size: 0.875rem;
+  color: var(--wood-medium);
+  font-weight: 600;
+}
