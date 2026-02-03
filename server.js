@@ -24,6 +24,7 @@ const { hasLegalMoves } = require('./src/engine/moves');
 const { createMatch, updateMatchScore, canOfferDoubleNow } = require('./src/engine/match');
 const { getOpponent } = require('./src/engine/board');
 const { stepAutomatedTurn } = require('./src/engine/automation');
+const { createModelPolicy } = require('./src/bot/modelPolicy');
 const {
   chooseHeuristicMove,
   chooseForesightMove,
@@ -38,6 +39,9 @@ const DEFAULT_UNLIMITED_TIME_MS = Number(process.env.UNLIMITED_TIME_MS) || 60_00
 const DEFAULT_TURN_DELAY_MS = Number(process.env.TURN_DELAY_MS) || 5_000;
 const BOT_ACCEPT_RATE = 0.5;
 const BOT_HUMAN_DELAY_MS = 500;
+const BOT_POLICY = process.env.BOT_POLICY || 'heuristic';
+const BOT_MODEL_MOVE_PATH = process.env.BOT_MODEL_MOVE_PATH || '';
+const BOT_MODEL_DOUBLE_PATH = process.env.BOT_MODEL_DOUBLE_PATH || '';
 
 const healthServer = http.createServer((req, res) => {
   if (req.url === '/health') {
@@ -477,11 +481,51 @@ function tryAutoRoll(game) {
   return true;
 }
 
-function createBotPlayers(game) {
+async function resolveBotPolicy(game) {
+  if (!game.bot || !game.state || !game.match) return null;
+  if (BOT_POLICY !== 'model') return null;
+  if (!BOT_MODEL_MOVE_PATH || !BOT_MODEL_DOUBLE_PATH) {
+    if (!game.botModelWarning) {
+      console.warn('Model bot requested but BOT_MODEL_MOVE_PATH or BOT_MODEL_DOUBLE_PATH is missing. Falling back to heuristic.');
+      game.botModelWarning = true;
+    }
+    return null;
+  }
+
+  if (game.botModelPolicy) return game.botModelPolicy;
+  if (game.botModelPolicyPromise) return game.botModelPolicyPromise;
+
+  game.botModelPolicyPromise = createModelPolicy({
+    moveModelPath: BOT_MODEL_MOVE_PATH,
+    doubleModelPath: BOT_MODEL_DOUBLE_PATH,
+    getMatch: () => game.match,
+    player: game.bot.player
+  })
+    .then((policy) => {
+      game.botModelPolicy = policy;
+      return policy;
+    })
+    .catch((error) => {
+      console.error('Model bot initialization failed:', error?.message || error);
+      return null;
+    })
+    .finally(() => {
+      game.botModelPolicyPromise = null;
+    });
+
+  return game.botModelPolicyPromise;
+}
+
+async function createBotPlayers(game) {
   if (!game.bot || !game.state) return {};
   const botPlayer = game.bot.player;
   const isAsymmetric = game.state.variant === 'asymmetric';
   const isForesightBot = isAsymmetric && game.state.asymmetricRoles?.foresightPlayer === botPlayer;
+
+  const modelPolicy = await resolveBotPolicy(game);
+  if (modelPolicy) {
+    return botPlayer === 'white' ? { white: modelPolicy } : { black: modelPolicy };
+  }
 
   const controller = {
     getMove: async (state, legalMoves) => {
@@ -537,7 +581,7 @@ function enqueueBotAction(game) {
 async function processBotActions(game) {
   if (!game.bot || !game.state || !game.match || game.matchOver) return false;
 
-  const players = createBotPlayers(game);
+  const players = await createBotPlayers(game);
   const result = await stepAutomatedTurn(
     game.match,
     game.state,

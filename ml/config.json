@@ -1,0 +1,14 @@
+{
+  "data_path": "data/asymmetric-training",
+  "batch_size": 128,
+  "epochs": 5,
+  "learning_rate": 0.001,
+  "hidden_size": 128,
+  "state_dim": 73,
+  "move_dim": 13,
+  "double_loss_weight": 0.5,
+  "eval_split": 0.1,
+  "seed": 42,
+  "device": "auto",
+  "save_path": "ml/checkpoints/asym_policy.pt"
+}

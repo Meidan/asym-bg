@@ -55,6 +55,39 @@ docker-compose up -d
 - WebSocket: ws://localhost:8080
 - Health: http://localhost:8081/health
 
+## ML Bootstrap (Asymmetric)
+Generate training data:
+```bash
+node scripts/generate-training-data.js
+```
+Defaults to 4 threads and writes shards under `data/asymmetric-training/`.
+Set `THREADS` and `OUTPUT` to customize.
+
+Train + export ONNX:
+```bash
+conda install --yes --file ml/requirements.txt
+python ml/train.py --config ml/config.json
+python ml/export_onnx.py --checkpoint ml/checkpoints/asym_policy.pt --config ml/config.json
+```
+
+Evaluate vs heuristic:
+```bash
+node scripts/eval-vs-heuristic.js
+```
+
+Evaluate model vs model (self-play):
+```bash
+node scripts/eval-selfplay.js
+```
+
+Enable model bot on server:
+```
+BOT_POLICY=model
+BOT_MODEL_MOVE_PATH=ml/checkpoints/asym_policy_move.onnx
+BOT_MODEL_DOUBLE_PATH=ml/checkpoints/asym_policy_double.onnx
+```
+Note: `onnxruntime-node` is an optional dependency. If it isn’t available (common on Alpine), the server falls back to heuristics.
+
 ## Notes
 - No persistence yet (in‑memory games only).
 - WebSocket URL can be overridden with `VITE_WS_URL` on the client.
