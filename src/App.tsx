@@ -300,14 +300,6 @@ function GameApp() {
           {multiplayer.player && (
             <div className="player-badge">You: {multiplayer.player}</div>
           )}
-          <div className="match-score">
-            <span className="score-white">{matchState.score.white}</span>
-            <span className="score-separator">-</span>
-            <span className="score-black">{matchState.score.black}</span>
-            {matchState.config.type === 'limited' && matchState.config.targetScore && (
-              <span className="score-target"> (to {matchState.config.targetScore})</span>
-            )}
-          </div>
           <div className="game-number">
             Game #{matchState.currentGame}
             {matchState.crawfordGame && <span className="crawford-indicator"> (Crawford)</span>}
@@ -334,6 +326,9 @@ function GameApp() {
               delayMs={timerDisplay.delayMs}
               activePlayer={timerDisplay.activePlayer}
               playerPerspective={multiplayer.player}
+              matchScore={matchState.score}
+              matchType={matchState.config.type}
+              targetScore={matchState.config.targetScore ?? null}
             />
           )}
           <Board

@@ -607,8 +607,15 @@
   background: linear-gradient(135deg, #f5f5f5, #ddd);
 }
 
-.cube-white {
+.cube-top {
   top: 20px;
+}
+
+.cube-bottom {
+  bottom: 20px;
+}
+
+.cube-white {
   background: linear-gradient(135deg, #f5f5f5, #ddd);
   border-color: #c0a080;
 }
@@ -618,7 +625,6 @@
 }
 
 .cube-black {
-  bottom: 20px;
   background: linear-gradient(135deg, #333, #1a1a1a);
   color: white;
   border-color: #666;

@@ -294,7 +294,7 @@ export function offerDouble(state: GameState): GameState {
   if (cube.value >= 64) {
     throw new Error('Cube is already at maximum value');
   }
-  
+
   return {
     ...state,
     doublingCube: {
@@ -310,15 +310,14 @@ export function offerDouble(state: GameState): GameState {
  */
 export function respondToDouble(state: GameState, accept: boolean): GameState {
   if (!accept) {
-    // Declining - opponent of current player wins at current cube value (before doubling)
-    const opponent = getOpponent(state.currentPlayer);
+    // Declining - the offerer (current player) wins at prior cube value
     const priorCubeValue = Math.max(1, Math.floor(state.doublingCube.value / 2));
     return {
       ...state,
-      winner: opponent,
+      winner: state.currentPlayer,
       winType: 'normal',
       phase: 'gameOver',
-      pointsAwarded: priorCubeValue // Opponent wins at cube value before doubling
+      pointsAwarded: priorCubeValue // Offerer wins at cube value before doubling
     };
   }
   

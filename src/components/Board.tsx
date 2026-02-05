@@ -192,6 +192,7 @@ const Board: React.FC<BoardProps> = ({
                         count > 0 &&
                         isOurTurn; // Only allow clicks if it's our turn
     const isEmptyPoint = count === 0;
+    const isOpponentBlot = count === 1 && player && player !== baseGameState.currentPlayer;
 
     const isInOpponentPreview = opponentPreviewMoves.some(move => {
       const moveFromBoard = move.from === 0 || move.from === 25
@@ -218,7 +219,7 @@ const Board: React.FC<BoardProps> = ({
         onClick={(e) => {
           if (canMoveFrom && isOurTurn) {
             handlePointClick(currentPlayerPoint, player!, false);
-          } else if (isEmptyPoint) {
+          } else if (isEmptyPoint || isOpponentBlot) {
             handleEmptyPointClick(boardPoint);
           }
         }}
@@ -584,14 +585,26 @@ const Board: React.FC<BoardProps> = ({
         </div>
 
         {/* Doubling cube - displayed on right side outside board */}
-        <div className={`doubling-cube-display ${
-          baseGameState.variant === 'asymmetric' && baseGameState.asymmetricRoles
-            ? baseGameState.asymmetricRoles.doublingPlayer === 'white' ? 'cube-white' : 'cube-black'
-            : baseGameState.doublingCube.owner === 'white' ? 'cube-white' :
-              baseGameState.doublingCube.owner === 'black' ? 'cube-black' : 'cube-center'
-        }`}>
+        {(() => {
+          const cubeOwner = baseGameState.variant === 'asymmetric'
+            ? baseGameState.asymmetricRoles?.doublingPlayer ?? null
+            : baseGameState.doublingCube.owner;
+          const cubeColorClass = cubeOwner === 'white'
+            ? 'cube-white'
+            : cubeOwner === 'black'
+              ? 'cube-black'
+              : 'cube-center';
+          const cubePositionClass = cubeOwner === null
+            ? ''
+            : flipBoard
+              ? (cubeOwner === 'white' ? 'cube-top' : 'cube-bottom')
+              : (cubeOwner === 'white' ? 'cube-bottom' : 'cube-top');
+          return (
+            <div className={`doubling-cube-display ${cubeColorClass} ${cubePositionClass}`}>
         <div className="cube-face">{crawfordGame ? 'CR' : baseGameState.doublingCube.value}</div>
-        </div>
+            </div>
+          );
+        })()}
 
         {/* Bottom half of board - changes based on perspective */}
         <div className="board-half board-bottom">
