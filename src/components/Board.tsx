@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { GameState, Move, Point, Player, getDiceValues } from '../engine/types';
-import { getCheckerCount, getOpponent, playerPointToBoardPoint, boardPointToPlayerPoint, allCheckersInHomeBoard, isPointBlocked, hasCheckersOnBar, getBarPoint } from '../engine/board';
+import { getCheckerCount, getOpponent, playerPointToBoardPoint, boardPointToPlayerPoint, allCheckersInHomeBoard, isPointBlocked, hasCheckersOnBar, getBarPoint, countPips } from '../engine/board';
 import { generateMovesForDie } from '../engine/moves';
 import Checker from './Checker';
 import './Board.css';
@@ -49,6 +49,8 @@ const Board: React.FC<BoardProps> = ({
   
   // Determine if board should be flipped (black's perspective)
   const flipBoard = playerPerspective === 'black';
+  const topPlayer: Player = flipBoard ? 'white' : 'black';
+  const bottomPlayer: Player = flipBoard ? 'black' : 'white';
   
   // Find valid moves from current position given already-made moves
   // Uses the SAME logic as the engine to avoid discrepancies
@@ -323,23 +325,19 @@ const Board: React.FC<BoardProps> = ({
 
   // Render borne off area
   const renderBorneOff = () => {
-    // Flip the borne-off sections for black's perspective
-    const topSection = flipBoard ? 'white' : 'black';
-    const bottomSection = flipBoard ? 'black' : 'white';
-    
     return (
       <div className="borne-off-area">
         <div className="borne-off-section borne-off-top">
-          <div className="borne-off-label">{topSection === 'black' ? 'Black Off' : 'White Off'}</div>
-          <div className="borne-off-count">{topSection === 'black' ? gameState.blackOff : gameState.whiteOff}</div>
-          {(topSection === 'black' ? gameState.blackOff : gameState.whiteOff) > 0 && (
+          <div className="borne-off-label">{topPlayer === 'black' ? 'Black Off' : 'White Off'}</div>
+          <div className="borne-off-count">{topPlayer === 'black' ? gameState.blackOff : gameState.whiteOff}</div>
+          {(topPlayer === 'black' ? gameState.blackOff : gameState.whiteOff) > 0 && (
             <div className="borne-off-checkers">
-              {Array.from({ length: Math.min(topSection === 'black' ? gameState.blackOff : gameState.whiteOff, 3) }).map((_, i) => (
+              {Array.from({ length: Math.min(topPlayer === 'black' ? gameState.blackOff : gameState.whiteOff, 3) }).map((_, i) => (
                 <Checker
                   key={i}
-                  player={topSection as Player}
+                  player={topPlayer}
                   position={i}
-                  total={topSection === 'black' ? gameState.blackOff : gameState.whiteOff}
+                  total={topPlayer === 'black' ? gameState.blackOff : gameState.whiteOff}
                   onClick={() => {}}
                   isClickable={false}
                 />
@@ -348,16 +346,16 @@ const Board: React.FC<BoardProps> = ({
           )}
         </div>
         <div className="borne-off-section borne-off-bottom">
-          <div className="borne-off-label">{bottomSection === 'black' ? 'Black Off' : 'White Off'}</div>
-          <div className="borne-off-count">{bottomSection === 'black' ? gameState.blackOff : gameState.whiteOff}</div>
-          {(bottomSection === 'black' ? gameState.blackOff : gameState.whiteOff) > 0 && (
+          <div className="borne-off-label">{bottomPlayer === 'black' ? 'Black Off' : 'White Off'}</div>
+          <div className="borne-off-count">{bottomPlayer === 'black' ? gameState.blackOff : gameState.whiteOff}</div>
+          {(bottomPlayer === 'black' ? gameState.blackOff : gameState.whiteOff) > 0 && (
             <div className="borne-off-checkers">
-              {Array.from({ length: Math.min(bottomSection === 'black' ? gameState.blackOff : gameState.whiteOff, 3) }).map((_, i) => (
+              {Array.from({ length: Math.min(bottomPlayer === 'black' ? gameState.blackOff : gameState.whiteOff, 3) }).map((_, i) => (
                 <Checker
                   key={i}
-                  player={bottomSection as Player}
+                  player={bottomPlayer}
                   position={i}
-                  total={bottomSection === 'black' ? gameState.blackOff : gameState.whiteOff}
+                  total={bottomPlayer === 'black' ? gameState.blackOff : gameState.whiteOff}
                   onClick={() => {}}
                   isClickable={false}
                 />
@@ -372,6 +370,14 @@ const Board: React.FC<BoardProps> = ({
   return (
     <div className="board-container">
       <div className={`board ${flipBoard ? 'board-flipped' : ''}`}>
+        <div className="pip-count pip-top">
+          <div className={`pip-label pip-${topPlayer}`}>{topPlayer}</div>
+          <div className="pip-value">{countPips(gameState.board, topPlayer)}</div>
+        </div>
+        <div className="pip-count pip-bottom">
+          <div className={`pip-label pip-${bottomPlayer}`}>{bottomPlayer}</div>
+          <div className="pip-value">{countPips(gameState.board, bottomPlayer)}</div>
+        </div>
         {/* Top half of board - changes based on perspective */}
         <div className="board-half board-top">
           <div className="quadrant quadrant-top-left">

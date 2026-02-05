@@ -154,6 +154,28 @@ export function countCheckersOnBoard(board: BoardState, player: Player): number 
 }
 
 /**
+ * Count total pip count for a player.
+ * Pips are measured as distance to bear off (bar counts as 25).
+ */
+export function countPips(board: BoardState, player: Player): number {
+  let total = 0;
+  const barPoint = getBarPoint(player);
+  const barStack = board[barPoint];
+  if (barStack && barStack.player === player) {
+    total += barStack.count * 25;
+  }
+
+  for (let point = 1; point <= 24; point++) {
+    const stack = board[point];
+    if (!stack || stack.player !== player) continue;
+    const distance = player === 'white' ? point : (25 - point);
+    total += distance * stack.count;
+  }
+
+  return total;
+}
+
+/**
  * Clone the board state
  */
 export function cloneBoard(board: BoardState): BoardState {
