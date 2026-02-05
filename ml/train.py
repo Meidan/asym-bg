@@ -1,7 +1,8 @@
 import argparse
 import json
 import os
-from typing import Dict, Any
+import random
+from typing import Dict, Any, Tuple
 
 import numpy as np
 import torch
@@ -121,9 +122,43 @@ def eval_epoch(model, loader, device, double_weight):
   }
 
 
+def save_checkpoint(path: str, model, optimizer, epoch: int, best_loss: float):
+  checkpoint = {
+    'epoch': epoch,
+    'best_loss': best_loss,
+    'model_state': model.state_dict(),
+    'optimizer_state': optimizer.state_dict(),
+    'torch_rng_state': torch.get_rng_state(),
+    'numpy_rng_state': np.random.get_state(),
+    'python_rng_state': random.getstate()
+  }
+  if torch.cuda.is_available():
+    checkpoint['cuda_rng_state'] = torch.cuda.get_rng_state_all()
+  torch.save(checkpoint, path)
+
+
+def load_checkpoint(path: str, model, optimizer, device: torch.device) -> Tuple[int, float]:
+  checkpoint = torch.load(path, map_location=device, weights_only=False)
+  model.load_state_dict(checkpoint['model_state'])
+  optimizer.load_state_dict(checkpoint['optimizer_state'])
+
+  torch.set_rng_state(checkpoint['torch_rng_state'])
+  if 'cuda_rng_state' in checkpoint and torch.cuda.is_available():
+    torch.cuda.set_rng_state_all(checkpoint['cuda_rng_state'])
+  if 'numpy_rng_state' in checkpoint:
+    np.random.set_state(checkpoint['numpy_rng_state'])
+  if 'python_rng_state' in checkpoint:
+    random.setstate(checkpoint['python_rng_state'])
+
+  last_epoch = int(checkpoint.get('epoch', -1))
+  best_loss = float(checkpoint.get('best_loss', float('inf')))
+  return last_epoch + 1, best_loss
+
+
 def main():
   parser = argparse.ArgumentParser()
   parser.add_argument('--config', default='ml/config.json')
+  parser.add_argument('--resume', nargs='?', const='__auto__', default=None)
   args = parser.parse_args()
 
   config = load_config(args.config)
@@ -150,11 +185,22 @@ def main():
   model.to(device)
   optimizer = torch.optim.Adam(model.parameters(), lr=config.get('learning_rate', 1e-3))
 
-  best_loss = float('inf')
-  os.makedirs(os.path.dirname(config['save_path']), exist_ok=True)
+  save_path = config['save_path']
+  checkpoint_path = config.get('checkpoint_path', f"{save_path}.ckpt")
+  os.makedirs(os.path.dirname(save_path), exist_ok=True)
+  os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
   double_weight = config.get('double_loss_weight', 0.5)
 
-  for epoch in range(config.get('epochs', 5)):
+  start_epoch = 0
+  best_loss = float('inf')
+  if args.resume is not None:
+    resume_path = checkpoint_path if args.resume == '__auto__' else args.resume
+    if not os.path.exists(resume_path):
+      raise FileNotFoundError(f"Checkpoint not found: {resume_path}")
+    start_epoch, best_loss = load_checkpoint(resume_path, model, optimizer, device)
+    print(f"Resuming from {resume_path} at epoch {start_epoch + 1}")
+
+  for epoch in range(start_epoch, config.get('epochs', 5)):
     train_metrics = train_epoch(model, train_loader, optimizer, device, double_weight)
     eval_metrics = eval_epoch(model, val_loader, device, double_weight)
     loss_value = eval_metrics['move_loss'] + double_weight * eval_metrics['double_loss']
@@ -174,9 +220,11 @@ def main():
       torch.save({
         'model_state': model.state_dict(),
         'config': config
-      }, config['save_path'])
+      }, save_path)
 
-  print(f"Saved best model to {config['save_path']}")
+    save_checkpoint(checkpoint_path, model, optimizer, epoch, best_loss)
+
+  print(f"Saved best model to {save_path}")
 
 
 if __name__ == '__main__':
