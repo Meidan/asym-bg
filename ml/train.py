@@ -6,10 +6,10 @@ from typing import Dict, Any, Tuple
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader
 import torch.nn.functional as F
 
-from dataset import AsymParquetDataset, collate_batch, split_by_match, MOVE_FEATURE_DIM
+from dataset import AsymParquetIterableDataset, collate_batch, MOVE_FEATURE_DIM
 from model import AsymPolicyModel
 
 
@@ -165,23 +165,41 @@ def main():
   torch.manual_seed(config.get('seed', 42))
   np.random.seed(config.get('seed', 42))
 
-  dataset = AsymParquetDataset(config['data_path'])
-  train_idx, val_idx = split_by_match(dataset.df, config.get('eval_split', 0.1), config.get('seed', 42))
+  val_ratio = config.get('eval_split', 0.1)
+  seed = config.get('seed', 42)
+  batch_rows = config.get('parquet_batch_rows', 4096)
+  train_dataset = AsymParquetIterableDataset(
+    config['data_path'],
+    split='train',
+    val_ratio=val_ratio,
+    seed=seed,
+    batch_rows=batch_rows
+  )
+  val_dataset = AsymParquetIterableDataset(
+    config['data_path'],
+    split='val',
+    val_ratio=val_ratio,
+    seed=seed,
+    batch_rows=batch_rows
+  )
   train_loader = DataLoader(
-    Subset(dataset, train_idx),
+    train_dataset,
     batch_size=config.get('batch_size', 128),
-    shuffle=True,
+    shuffle=False,
     collate_fn=collate_batch
   )
   val_loader = DataLoader(
-    Subset(dataset, val_idx),
+    val_dataset,
     batch_size=config.get('batch_size', 128),
     shuffle=False,
     collate_fn=collate_batch
   )
 
   device = get_device(config)
-  model = AsymPolicyModel(state_dim=len(dataset[0].state), move_dim=MOVE_FEATURE_DIM, hidden_size=config.get('hidden_size', 128))
+  state_dim = int(config.get('state_dim', 0))
+  if state_dim <= 0:
+    raise ValueError('state_dim must be set in config when using iterable dataset')
+  model = AsymPolicyModel(state_dim=state_dim, move_dim=MOVE_FEATURE_DIM, hidden_size=config.get('hidden_size', 128))
   model.to(device)
   optimizer = torch.optim.Adam(model.parameters(), lr=config.get('learning_rate', 1e-3))
 
