@@ -1,10 +1,106 @@
-import { GameState, Move, Player } from '../engine/types';
+import { GameState, Move, Player, IPlayer } from '../engine/types';
 import { getOpponent, allCheckersInHomeBoard } from '../engine/board';
 import { getLegalMoves } from '../engine/moves';
 import { makeMove } from '../engine/game';
+import { evaluateStateWithGnubg, GnuBgEquityType } from './gnubg';
 
 export const DEFAULT_MAX_CANDIDATES = 30;
 export const DEFAULT_MAX_REPLY_CANDIDATES = 30;
+
+export type HeuristicPolicy = 'simple' | 'gnubg';
+
+export interface HeuristicEvalOptions {
+  policy?: HeuristicPolicy;
+  equity?: GnuBgEquityType;
+  gnubgTimeoutMs?: number;
+}
+
+export interface HeuristicMoveOptions extends HeuristicEvalOptions {
+  maxCandidates?: number;
+}
+
+export interface HeuristicForesightOptions extends HeuristicEvalOptions {
+  maxCandidates?: number;
+  maxReplyCandidates?: number;
+}
+
+export interface HeuristicControllerOptions extends HeuristicEvalOptions {
+  role: 'foresight' | 'doubling';
+  maxCandidates?: number;
+  maxReplyCandidates?: number;
+}
+
+const DEFAULT_HEURISTIC_POLICY: HeuristicPolicy = 'simple';
+const DEFAULT_GNUBG_EQUITY_FOR_HEURISTIC: GnuBgEquityType = 'cubeful';
+const DEFAULT_GNUBG_EQUITY_FOR_FORESIGHT: GnuBgEquityType = 'cubeless';
+const GNUBG_OFFER_DOUBLE_THRESHOLD = 0.5;
+const GNUBG_ACCEPT_DOUBLE_THRESHOLD = -0.5;
+
+let gnubgFailureLogged = false;
+let gnubgUnavailable = false;
+
+function isGnubgMissing(error: unknown): boolean {
+  return Boolean(
+    error &&
+    typeof error === 'object' &&
+    'code' in error &&
+    (error as { code?: string }).code === 'ENOENT'
+  );
+}
+
+function logGnubgFailure(error: unknown): void {
+  if (gnubgFailureLogged) return;
+  gnubgFailureLogged = true;
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  console.warn(`Gnubg evaluation failed; falling back to simple heuristic. ${message}`);
+}
+
+async function evaluateStateWithPolicy(
+  state: GameState,
+  player: Player,
+  options: HeuristicEvalOptions | undefined,
+  defaultEquity: GnuBgEquityType
+): Promise<number> {
+  const policy = options?.policy ?? DEFAULT_HEURISTIC_POLICY;
+  if (policy !== 'gnubg' || gnubgUnavailable) {
+    return evaluateState(state, player);
+  }
+
+  const equity = options?.equity ?? defaultEquity;
+  try {
+    return await evaluateStateWithGnubg({
+      state,
+      perspective: player,
+      equity,
+      timeoutMs: options?.gnubgTimeoutMs
+    });
+  } catch (error) {
+    if (isGnubgMissing(error)) gnubgUnavailable = true;
+    logGnubgFailure(error);
+    return evaluateState(state, player);
+  }
+}
+
+async function evaluateGnubgOrNull(
+  state: GameState,
+  player: Player,
+  equity: GnuBgEquityType,
+  options: HeuristicEvalOptions | undefined
+): Promise<number | null> {
+  if (gnubgUnavailable) return null;
+  try {
+    return await evaluateStateWithGnubg({
+      state,
+      perspective: player,
+      equity,
+      timeoutMs: options?.gnubgTimeoutMs
+    });
+  } catch (error) {
+    if (isGnubgMissing(error)) gnubgUnavailable = true;
+    logGnubgFailure(error);
+    return null;
+  }
+}
 
 function countPips(board: GameState['board'], player: Player): number {
   let total = 0;
@@ -144,11 +240,11 @@ function sampleMoves(sequences: Move[][], limit: number): Move[][] {
   return picked;
 }
 
-export function chooseHeuristicMove(
+export async function chooseHeuristicMove(
   state: GameState,
   player: Player,
-  options?: { maxCandidates?: number }
-): Move[] {
+  options?: HeuristicMoveOptions
+): Promise<Move[]> {
   const legalMoves = getLegalMoves(state);
   if (legalMoves.length === 0) return [];
 
@@ -161,7 +257,12 @@ export function chooseHeuristicMove(
   for (const seq of candidates) {
     const result = makeMove(state, seq);
     if (!result.valid || !result.newState) continue;
-    const score = evaluateState(result.newState, player);
+    const score = await evaluateStateWithPolicy(
+      result.newState,
+      player,
+      options,
+      DEFAULT_GNUBG_EQUITY_FOR_HEURISTIC
+    );
     if (score > bestScore) {
       bestScore = score;
       bestMoves = [seq];
@@ -173,11 +274,11 @@ export function chooseHeuristicMove(
   return bestMoves[Math.floor(Math.random() * bestMoves.length)] || legalMoves[0];
 }
 
-export function chooseForesightMove(
+export async function chooseForesightMove(
   state: GameState,
   player: Player,
-  options?: { maxCandidates?: number; maxReplyCandidates?: number }
-): Move[] {
+  options?: HeuristicForesightOptions
+): Promise<Move[]> {
   const legalMoves = getLegalMoves(state);
   if (legalMoves.length === 0) return [];
 
@@ -193,7 +294,12 @@ export function chooseForesightMove(
     if (!result.valid || !result.newState) continue;
 
     const afterBot = result.newState;
-    let score = evaluateState(afterBot, player);
+    let score = await evaluateStateWithPolicy(
+      afterBot,
+      player,
+      options,
+      DEFAULT_GNUBG_EQUITY_FOR_FORESIGHT
+    );
 
     if (afterBot.phase === 'moving' && !afterBot.winner) {
       const replyMoves = getLegalMoves(afterBot);
@@ -205,7 +311,12 @@ export function chooseForesightMove(
         for (const reply of replyCandidates) {
           const replyResult = makeMove(afterBot, reply);
           if (!replyResult.valid || !replyResult.newState) continue;
-          const replyScore = evaluateState(replyResult.newState, player);
+          const replyScore = await evaluateStateWithPolicy(
+            replyResult.newState,
+            player,
+            options,
+            DEFAULT_GNUBG_EQUITY_FOR_FORESIGHT
+          );
           if (replyScore < worst) worst = replyScore;
         }
         if (worst !== Infinity) score = worst;
@@ -254,4 +365,64 @@ export function shouldAcceptDouble(state: GameState, player: Player): boolean {
   if (!race && ourBar > 0 && opponentPrime >= 4 && opponentHome >= 3) return false;
   if (!race && opponentPrime >= 5 && opponentHome >= 4 && pipDiff < -10) return false;
   return score >= -10;
+}
+
+export async function shouldOfferDoubleWithPolicy(
+  state: GameState,
+  player: Player,
+  options?: HeuristicEvalOptions
+): Promise<boolean> {
+  const policy = options?.policy ?? DEFAULT_HEURISTIC_POLICY;
+  if (policy !== 'gnubg') return shouldOfferDouble(state, player);
+  const equityType = options?.equity ?? DEFAULT_GNUBG_EQUITY_FOR_HEURISTIC;
+  const equity = await evaluateGnubgOrNull(state, player, equityType, options);
+  if (equity === null) return shouldOfferDouble(state, player);
+  return equity >= GNUBG_OFFER_DOUBLE_THRESHOLD;
+}
+
+export async function shouldAcceptDoubleWithPolicy(
+  state: GameState,
+  player: Player,
+  options?: HeuristicEvalOptions
+): Promise<boolean> {
+  const policy = options?.policy ?? DEFAULT_HEURISTIC_POLICY;
+  if (policy !== 'gnubg') return shouldAcceptDouble(state, player);
+  const equityType = options?.equity ?? DEFAULT_GNUBG_EQUITY_FOR_HEURISTIC;
+  const equity = await evaluateGnubgOrNull(state, player, equityType, options);
+  if (equity === null) return shouldAcceptDouble(state, player);
+  return equity >= GNUBG_ACCEPT_DOUBLE_THRESHOLD;
+}
+
+export function createHeuristicController(options: HeuristicControllerOptions): IPlayer {
+  const policy = options.policy ?? DEFAULT_HEURISTIC_POLICY;
+  const moveEquity = options.equity ?? (options.role === 'foresight'
+    ? DEFAULT_GNUBG_EQUITY_FOR_FORESIGHT
+    : DEFAULT_GNUBG_EQUITY_FOR_HEURISTIC);
+
+  const moveOptions: HeuristicForesightOptions = {
+    policy,
+    equity: moveEquity,
+    gnubgTimeoutMs: options.gnubgTimeoutMs,
+    maxCandidates: options.maxCandidates,
+    maxReplyCandidates: options.maxReplyCandidates
+  };
+
+  return {
+    getMove: async (state) => {
+      if (options.role === 'foresight') {
+        return chooseForesightMove(state, state.currentPlayer, moveOptions);
+      }
+      return chooseHeuristicMove(state, state.currentPlayer, moveOptions);
+    },
+    offerDouble: async (state) => shouldOfferDoubleWithPolicy(state, state.currentPlayer, {
+      policy,
+      equity: DEFAULT_GNUBG_EQUITY_FOR_HEURISTIC,
+      gnubgTimeoutMs: options.gnubgTimeoutMs
+    }),
+    acceptDouble: async (state) => shouldAcceptDoubleWithPolicy(state, state.currentPlayer, {
+      policy,
+      equity: DEFAULT_GNUBG_EQUITY_FOR_HEURISTIC,
+      gnubgTimeoutMs: options.gnubgTimeoutMs
+    })
+  };
 }

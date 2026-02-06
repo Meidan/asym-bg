@@ -15,12 +15,7 @@ const { Worker, isMainThread, parentPort, workerData } = require('worker_threads
 const { createMatch } = require('../src/engine/match');
 const { runAutomatedMatch } = require('../src/engine/automation');
 const { encodeState, serializeLegalMoves, serializeMoveSequence, STATE_VECTOR_LENGTH } = require('../src/engine/encode');
-const {
-  chooseHeuristicMove,
-  chooseForesightMove,
-  shouldOfferDouble,
-  shouldAcceptDouble
-} = require('../src/bot/heuristics');
+const { createHeuristicController } = require('../src/bot/heuristics');
 
 const MATCHES = Number(process.env.MATCHES) || 100;
 const TARGET_SCORE = Number(process.env.TARGET_SCORE) || 5;
@@ -28,6 +23,11 @@ const THREADS = Math.max(1, Number(process.env.THREADS) || 4);
 const OUTPUT_PATH = process.env.OUTPUT || path.join('data', 'asymmetric-training.parquet');
 const FORESIGHT_PLAYER = process.env.FORESIGHT_PLAYER || 'white';
 const DOUBLING_PLAYER = process.env.DOUBLING_PLAYER || 'black';
+const HEURISTIC_POLICY = (process.env.HEURISTIC_POLICY || 'simple').toLowerCase() === 'gnubg'
+  ? 'gnubg'
+  : 'simple';
+const GNUBG_TIMEOUT_RAW = Number(process.env.GNUBG_TIMEOUT_MS);
+const GNUBG_TIMEOUT_MS = Number.isFinite(GNUBG_TIMEOUT_RAW) ? GNUBG_TIMEOUT_RAW : undefined;
 
 const schema = new parquet.ParquetSchema({
   state: { type: 'FLOAT', repeated: true },
@@ -43,15 +43,10 @@ const schema = new parquet.ParquetSchema({
 });
 
 function buildPlayers(roles) {
-  const makeController = (role) => ({
-    getMove: async (state, legalMoves) => {
-      const chosen = role === 'foresight'
-        ? chooseForesightMove(state, state.currentPlayer)
-        : chooseHeuristicMove(state, state.currentPlayer);
-      return chosen;
-    },
-    offerDouble: async (state) => shouldOfferDouble(state, state.currentPlayer),
-    acceptDouble: async (state) => shouldAcceptDouble(state, state.currentPlayer)
+  const makeController = (role) => createHeuristicController({
+    role,
+    policy: HEURISTIC_POLICY,
+    gnubgTimeoutMs: GNUBG_TIMEOUT_MS
   });
 
   const controllers = {

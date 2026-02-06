@@ -11,18 +11,18 @@ require('ts-node').register({
 const { createMatch } = require('../src/engine/match');
 const { runAutomatedMatch } = require('../src/engine/automation');
 const { createModelPolicy } = require('../src/bot/modelPolicy');
-const {
-  chooseHeuristicMove,
-  chooseForesightMove,
-  shouldOfferDouble,
-  shouldAcceptDouble
-} = require('../src/bot/heuristics');
+const { createHeuristicController } = require('../src/bot/heuristics');
 
 const MATCHES = Number(process.env.MATCHES) || 200;
 const TARGET_SCORE = Number(process.env.TARGET_SCORE) || 5;
 const MODEL_ROLE = process.env.MODEL_ROLE || 'foresight'; // foresight | doubling
 const MOVE_MODEL = process.env.MOVE_MODEL || 'ml/checkpoints/asym_policy_move.onnx';
 const DOUBLE_MODEL = process.env.DOUBLE_MODEL || 'ml/checkpoints/asym_policy_double.onnx';
+const HEURISTIC_POLICY = (process.env.HEURISTIC_POLICY || 'simple').toLowerCase() === 'gnubg'
+  ? 'gnubg'
+  : 'simple';
+const GNUBG_TIMEOUT_RAW = Number(process.env.GNUBG_TIMEOUT_MS);
+const GNUBG_TIMEOUT_MS = Number.isFinite(GNUBG_TIMEOUT_RAW) ? GNUBG_TIMEOUT_RAW : undefined;
 
 async function createPlayers(match) {
   const roles = match.asymmetricRoles;
@@ -34,12 +34,10 @@ async function createPlayers(match) {
     player: modelPlayer
   });
 
-  const heuristicController = (role) => ({
-    getMove: async (state) => role === 'foresight'
-      ? chooseForesightMove(state, state.currentPlayer)
-      : chooseHeuristicMove(state, state.currentPlayer),
-    offerDouble: async (state) => shouldOfferDouble(state, state.currentPlayer),
-    acceptDouble: async (state) => shouldAcceptDouble(state, state.currentPlayer)
+  const heuristicController = (role) => createHeuristicController({
+    role,
+    policy: HEURISTIC_POLICY,
+    gnubgTimeoutMs: GNUBG_TIMEOUT_MS
   });
 
   const players = {};
