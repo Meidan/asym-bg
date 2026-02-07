@@ -573,6 +573,9 @@ function enqueueBotAction(game) {
           game.botQueued = true;
         }
       })
+      .catch((error) => {
+        console.error('Bot action failed:', error?.message || error);
+      })
       .finally(() => {
         game.botThinking = false;
         if (game.botQueued) {
@@ -738,6 +741,17 @@ function scheduleTimeout(fn, delayMs) {
 
 timerInterval = setInterval(() => {
   for (const game of games.values()) {
+    if (
+      game.bot &&
+      !game.matchOver &&
+      game.state?.variant === 'asymmetric' &&
+      game.state.currentPlayer === game.bot.player &&
+      !game.pendingDoubleOfferer &&
+      !game.botThinking &&
+      !game.botQueued
+    ) {
+      enqueueBotAction(game);
+    }
     updateTimer(game);
     if (!game.matchOver && game.timers.activePlayer) {
       sendTimerState(game);

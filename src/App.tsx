@@ -30,6 +30,7 @@ function GameApp() {
   } | null>(null);
 
   const lastWinnerRef = useRef<Player | null>(null);
+  const lastAutoPassRef = useRef<string | null>(null);
 
   const buildPreviewState = useCallback((baseState: GameState, moves: Move[]): GameState => {
     let previewBoard = cloneBoard(baseState.board);
@@ -146,6 +147,10 @@ function GameApp() {
     if (!gameState || !isOurTurn) return;
     
     if (selectedMoveSequence.length === 0) {
+      if (legalMoves.length === 0) {
+        multiplayer.requestMove([]);
+        multiplayer.sendPreviewUpdate([]);
+      }
       return;
     }
 
@@ -265,6 +270,24 @@ function GameApp() {
     const points = gameState.pointsAwarded || 1;
     alert(`${gameState.winner} wins${winTypeText}! +${points} point${points !== 1 ? 's' : ''}`);
   }, [gameState]);
+
+  useEffect(() => {
+    if (!gameState || !matchState) return;
+    if (gameState.variant !== 'asymmetric') return;
+    if (!isOurTurn) return;
+    if (pendingDoubleOfferer) return;
+    if (gameState.phase !== 'moving') return;
+    if (legalMoves.length > 0) return;
+
+    const dice = gameState.currentPlayer === 'white' ? gameState.whiteDice : gameState.blackDice;
+    const diceKey = dice ? `${dice.die1}-${dice.die2}` : 'none';
+    const key = `${gameState.currentPlayer}|${gameState.moveHistory.length}|${diceKey}`;
+    if (lastAutoPassRef.current === key) return;
+    lastAutoPassRef.current = key;
+
+    multiplayer.requestMove([]);
+    multiplayer.sendPreviewUpdate([]);
+  }, [gameState, matchState, isOurTurn, pendingDoubleOfferer, legalMoves, multiplayer]);
 
   // Keyboard shortcuts (spacebar for roll/confirm)
   useEffect(() => {
