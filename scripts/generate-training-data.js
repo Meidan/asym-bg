@@ -17,9 +17,9 @@ const { runAutomatedMatch } = require('../src/engine/automation');
 const { encodeState, serializeLegalMoves, serializeMoveSequence, STATE_VECTOR_LENGTH } = require('../src/engine/encode');
 const { createHeuristicController } = require('../src/bot/heuristics');
 
-const MATCHES = Number(process.env.MATCHES) || 100;
+const MATCHES = Number(process.env.MATCHES) || 100*100;
 const TARGET_SCORE = Number(process.env.TARGET_SCORE) || 5;
-const THREADS = Math.max(1, Number(process.env.THREADS) || 4);
+const THREADS = Math.max(1, Number(process.env.THREADS) || 8);
 const OUTPUT_PATH = process.env.OUTPUT || path.join('data', 'asymmetric-training.parquet');
 const FORESIGHT_PLAYER = process.env.FORESIGHT_PLAYER || 'white';
 const DOUBLING_PLAYER = process.env.DOUBLING_PLAYER || 'black';

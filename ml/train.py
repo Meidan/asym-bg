@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import random
+import time
 from typing import Dict, Any, Tuple
 
 import numpy as np
@@ -25,45 +26,94 @@ def get_device(config: Dict[str, Any]) -> torch.device:
   return torch.device(requested)
 
 
-def train_epoch(model, loader, optimizer, device, double_weight):
+def train_epoch(
+  model,
+  loader,
+  optimizer,
+  device,
+  double_weight,
+  *,
+  use_amp: bool,
+  grad_accum_steps: int,
+  estimate_steps: int
+):
   model.train()
   move_loss_total = 0.0
   double_loss_total = 0.0
   move_batches = 0
   double_batches = 0
+  scaler = torch.amp.GradScaler(device.type, enabled=use_amp)
+  accum_steps = 0
+  estimate_steps = max(0, int(estimate_steps))
+  estimate_started = False
+  estimate_start_time = 0.0
+  estimate_printed = False
+
+  optimizer.zero_grad(set_to_none=True)
 
   for batch in loader:
+    if estimate_steps > 0 and not estimate_started:
+      estimate_start_time = time.perf_counter()
+      estimate_started = True
+    has_loss = False
+    with torch.amp.autocast(device.type, enabled=use_amp):
+      loss = 0.0
+
+      if 'move' in batch:
+        move_batch = batch['move']
+        state = move_batch['state'].to(device)
+        moves = move_batch['moves'].to(device)
+        mask = move_batch['mask'].to(device)
+        chosen = move_batch['chosen'].to(device)
+
+        scores = model.score_moves(state, moves)
+        scores = scores.masked_fill(~mask, torch.finfo(scores.dtype).min)
+        loss_move = F.cross_entropy(scores, chosen)
+        loss = loss + loss_move
+        move_loss_total += loss_move.item()
+        move_batches += 1
+        has_loss = True
+
+      if 'double' in batch:
+        double_batch = batch['double']
+        state = double_batch['state'].to(device)
+        decision = double_batch['decision'].to(device)
+        logits = model.double_logits(state)
+        loss_double = F.binary_cross_entropy_with_logits(logits, decision)
+        loss = loss + double_weight * loss_double
+        double_loss_total += loss_double.item()
+        double_batches += 1
+        has_loss = True
+
+      if not has_loss:
+        continue
+      loss = loss / max(1, grad_accum_steps)
+
+    scaler.scale(loss).backward()
+    accum_steps += 1
+    if estimate_steps > 0 and estimate_started and not estimate_printed:
+      if accum_steps >= estimate_steps:
+        elapsed = time.perf_counter() - estimate_start_time
+        est_step_ms = (elapsed / estimate_steps) * 1000.0
+        est_epoch_sec = None
+        try:
+          est_epoch_sec = (len(loader) / estimate_steps) * elapsed
+        except TypeError:
+          est_epoch_sec = None
+        msg = f"Estimated step_time_ms={est_step_ms:.2f}"
+        if est_epoch_sec is not None:
+          msg += f" estimated_epoch_time_sec={est_epoch_sec:.2f}"
+        print(msg)
+        estimate_printed = True
+    if accum_steps % grad_accum_steps == 0:
+      scaler.step(optimizer)
+      scaler.update()
+      optimizer.zero_grad(set_to_none=True)
+
+  if accum_steps % grad_accum_steps != 0:
+    scaler.step(optimizer)
+    scaler.update()
     optimizer.zero_grad(set_to_none=True)
-    loss = 0.0
-
-    if 'move' in batch:
-      move_batch = batch['move']
-      state = move_batch['state'].to(device)
-      moves = move_batch['moves'].to(device)
-      mask = move_batch['mask'].to(device)
-      chosen = move_batch['chosen'].to(device)
-
-      scores = model.score_moves(state, moves)
-      scores = scores.masked_fill(~mask, -1e9)
-      loss_move = F.cross_entropy(scores, chosen)
-      loss = loss + loss_move
-      move_loss_total += loss_move.item()
-      move_batches += 1
-
-    if 'double' in batch:
-      double_batch = batch['double']
-      state = double_batch['state'].to(device)
-      decision = double_batch['decision'].to(device)
-      logits = model.double_logits(state)
-      loss_double = F.binary_cross_entropy_with_logits(logits, decision)
-      loss = loss + double_weight * loss_double
-      double_loss_total += loss_double.item()
-      double_batches += 1
-
-    if loss == 0.0:
-      continue
-    loss.backward()
-    optimizer.step()
 
   return {
     'move_loss': move_loss_total / max(1, move_batches),
@@ -71,7 +121,7 @@ def train_epoch(model, loader, optimizer, device, double_weight):
   }
 
 
-def eval_epoch(model, loader, device, double_weight):
+def eval_epoch(model, loader, device, double_weight, *, use_amp: bool):
   model.eval()
   move_loss_total = 0.0
   double_loss_total = 0.0
@@ -84,35 +134,36 @@ def eval_epoch(model, loader, device, double_weight):
 
   with torch.no_grad():
     for batch in loader:
-      if 'move' in batch:
-        move_batch = batch['move']
-        state = move_batch['state'].to(device)
-        moves = move_batch['moves'].to(device)
-        mask = move_batch['mask'].to(device)
-        chosen = move_batch['chosen'].to(device)
+      with torch.amp.autocast(device.type, enabled=use_amp):
+        if 'move' in batch:
+          move_batch = batch['move']
+          state = move_batch['state'].to(device)
+          moves = move_batch['moves'].to(device)
+          mask = move_batch['mask'].to(device)
+          chosen = move_batch['chosen'].to(device)
 
-        scores = model.score_moves(state, moves)
-        scores = scores.masked_fill(~mask, -1e9)
-        loss_move = F.cross_entropy(scores, chosen)
-        move_loss_total += loss_move.item()
-        move_batches += 1
+          scores = model.score_moves(state, moves)
+          scores = scores.masked_fill(~mask, torch.finfo(scores.dtype).min)
+          loss_move = F.cross_entropy(scores, chosen)
+          move_loss_total += loss_move.item()
+          move_batches += 1
 
-        preds = scores.argmax(dim=1)
-        move_correct += (preds == chosen).sum().item()
-        move_total += chosen.size(0)
+          preds = scores.argmax(dim=1)
+          move_correct += (preds == chosen).sum().item()
+          move_total += chosen.size(0)
 
-      if 'double' in batch:
-        double_batch = batch['double']
-        state = double_batch['state'].to(device)
-        decision = double_batch['decision'].to(device)
-        logits = model.double_logits(state)
-        loss_double = F.binary_cross_entropy_with_logits(logits, decision)
-        double_loss_total += loss_double.item()
-        double_batches += 1
+        if 'double' in batch:
+          double_batch = batch['double']
+          state = double_batch['state'].to(device)
+          decision = double_batch['decision'].to(device)
+          logits = model.double_logits(state)
+          loss_double = F.binary_cross_entropy_with_logits(logits, decision)
+          double_loss_total += loss_double.item()
+          double_batches += 1
 
-        preds = (torch.sigmoid(logits) >= 0.5).float()
-        double_correct += (preds == decision).sum().item()
-        double_total += decision.size(0)
+          preds = (torch.sigmoid(logits) >= 0.5).float()
+          double_correct += (preds == decision).sum().item()
+          double_total += decision.size(0)
 
   return {
     'move_loss': move_loss_total / max(1, move_batches),
@@ -208,6 +259,9 @@ def main():
   os.makedirs(os.path.dirname(save_path), exist_ok=True)
   os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
   double_weight = config.get('double_loss_weight', 0.5)
+  use_amp = config.get('use_amp', device.type == 'cuda')
+  grad_accum_steps = int(config.get('grad_accum_steps', 1))
+  estimate_steps = int(config.get('estimate_steps', 10))
 
   start_epoch = 0
   best_loss = float('inf')
@@ -219,8 +273,17 @@ def main():
     print(f"Resuming from {resume_path} at epoch {start_epoch + 1}")
 
   for epoch in range(start_epoch, config.get('epochs', 5)):
-    train_metrics = train_epoch(model, train_loader, optimizer, device, double_weight)
-    eval_metrics = eval_epoch(model, val_loader, device, double_weight)
+    train_metrics = train_epoch(
+      model,
+      train_loader,
+      optimizer,
+      device,
+      double_weight,
+      use_amp=use_amp,
+      grad_accum_steps=grad_accum_steps,
+      estimate_steps=estimate_steps
+    )
+    eval_metrics = eval_epoch(model, val_loader, device, double_weight, use_amp=use_amp)
     loss_value = eval_metrics['move_loss'] + double_weight * eval_metrics['double_loss']
 
     print(

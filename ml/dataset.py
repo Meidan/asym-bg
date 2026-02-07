@@ -150,7 +150,7 @@ class AsymParquetIterableDataset(IterableDataset):
       match_index = int(match_indices[i])
       if not self._include(match_index):
         continue
-      state = np.array(states[i], dtype=np.float32, copy=False)
+      state = np.asarray(states[i], dtype=np.float32)
       action_type = str(action_types[i])
       raw_legal = legal_moves_col[i] if i < len(legal_moves_col) else None
       legal_moves = None
