@@ -1,14 +1,13 @@
-import hashlib
 import json
 import os
 from dataclasses import dataclass
-from typing import List, Optional, Dict, Any, Tuple, Iterable
+from typing import List, Optional, Dict, Any, Tuple
 
 import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 import torch
-from torch.utils.data import Dataset, IterableDataset
+from torch.utils.data import Dataset
 
 MOVE_MAX = 4
 MOVE_FEATURE_DIM = MOVE_MAX * 3 + 1
@@ -46,25 +45,39 @@ class Sample:
   match_index: int
   game_index: int
   ply_index: int
+  game_result: Optional[float]
+  match_result: Optional[float]
+  game_points: Optional[float]
+  match_points: Optional[float]
 
 
-def _resolve_parquet_paths(path: str) -> List[str]:
-  paths = [item.strip() for item in str(path).split(',') if item.strip()]
-  if len(paths) == 1 and os.path.isdir(paths[0]):
-    directory = paths[0]
-    files = sorted(
-      file for file in (os.path.join(directory, name) for name in os.listdir(directory))
-      if file.endswith('.parquet')
-    )
-    if not files:
-      raise ValueError(f'No parquet files found in directory: {directory}')
-    paths = files
-  return paths
+def _maybe_float(value: Any) -> Optional[float]:
+  if value is None:
+    return None
+  if isinstance(value, (int, float, np.floating)):
+    return float(value)
+  if isinstance(value, str) and value.strip():
+    try:
+      return float(value)
+    except ValueError:
+      return None
+  if pd.isna(value):
+    return None
+  return None
 
 
-class AsymParquetDataset(Dataset):
+class SelfplayParquetDataset(Dataset):
   def __init__(self, path: str):
-    paths = _resolve_parquet_paths(path)
+    paths = [item.strip() for item in str(path).split(',') if item.strip()]
+    if len(paths) == 1 and os.path.isdir(paths[0]):
+      directory = paths[0]
+      files = sorted(
+        file for file in (os.path.join(directory, name) for name in os.listdir(directory))
+        if file.endswith('.parquet')
+      )
+      if not files:
+        raise ValueError(f'No parquet files found in directory: {directory}')
+      paths = files
 
     table = pq.read_table(paths)
     self.df = table.to_pandas()
@@ -89,6 +102,12 @@ class AsymParquetDataset(Dataset):
     match_index = int(row['match_index'])
     game_index = int(row['game_index'])
     ply_index = int(row['ply_index'])
+
+    game_result = _maybe_float(row.get('game_result'))
+    match_result = _maybe_float(row.get('match_result'))
+    game_points = _maybe_float(row.get('game_points'))
+    match_points = _maybe_float(row.get('match_points'))
+
     return Sample(
       state=state,
       action_type=action_type,
@@ -98,106 +117,12 @@ class AsymParquetDataset(Dataset):
       role=role,
       match_index=match_index,
       game_index=game_index,
-      ply_index=ply_index
+      ply_index=ply_index,
+      game_result=game_result,
+      match_result=match_result,
+      game_points=game_points,
+      match_points=match_points
     )
-
-
-class AsymParquetIterableDataset(IterableDataset):
-  def __init__(
-    self,
-    path: str,
-    split: str = 'train',
-    val_ratio: float = 0.1,
-    seed: int = 42,
-    batch_rows: int = 4096
-  ):
-    self.paths = _resolve_parquet_paths(path)
-    if split not in ('train', 'val', 'all'):
-      raise ValueError("split must be 'train', 'val', or 'all'")
-    self.split = split
-    self.val_ratio = float(val_ratio)
-    self.seed = int(seed)
-    self.batch_rows = int(batch_rows)
-
-  def _is_val(self, match_index: int) -> bool:
-    if self.val_ratio <= 0:
-      return False
-    if self.val_ratio >= 1:
-      return True
-    key = f"{self.seed}:{match_index}".encode('utf-8')
-    digest = hashlib.md5(key).digest()
-    value = int.from_bytes(digest[:8], 'big')
-    return (value / 2**64) < self.val_ratio
-
-  def _include(self, match_index: int) -> bool:
-    if self.split == 'all':
-      return True
-    is_val = self._is_val(match_index)
-    return is_val if self.split == 'val' else not is_val
-
-  def _iter_samples(self, rows: Dict[str, List[Any]]) -> Iterable[Sample]:
-    states = rows.get('state', [])
-    action_types = rows.get('action_type', [])
-    legal_moves_col = rows.get('legal_moves', [])
-    chosen_index_col = rows.get('chosen_index', [])
-    decision_col = rows.get('decision', [])
-    roles = rows.get('role', [])
-    match_indices = rows.get('match_index', [])
-    game_indices = rows.get('game_index', [])
-    ply_indices = rows.get('ply_index', [])
-
-    for i in range(len(states)):
-      match_index = int(match_indices[i])
-      if not self._include(match_index):
-        continue
-      state = np.asarray(states[i], dtype=np.float32)
-      action_type = str(action_types[i])
-      raw_legal = legal_moves_col[i] if i < len(legal_moves_col) else None
-      legal_moves = None
-      if raw_legal is not None:
-        if isinstance(raw_legal, (bytes, bytearray)):
-          raw_legal = raw_legal.decode('utf-8')
-        if isinstance(raw_legal, str):
-          legal_moves = json.loads(raw_legal)
-        elif isinstance(raw_legal, (list, tuple)):
-          legal_moves = [str(item) for item in raw_legal]
-      chosen_index = None
-      if i < len(chosen_index_col) and chosen_index_col[i] is not None:
-        chosen_index = int(chosen_index_col[i])
-      decision = None
-      if i < len(decision_col) and decision_col[i] is not None:
-        decision = bool(decision_col[i])
-
-      yield Sample(
-        state=state,
-        action_type=action_type,
-        legal_moves=legal_moves,
-        chosen_index=chosen_index,
-        decision=decision,
-        role=str(roles[i]) if i < len(roles) else '',
-        match_index=match_index,
-        game_index=int(game_indices[i]) if i < len(game_indices) else 0,
-        ply_index=int(ply_indices[i]) if i < len(ply_indices) else 0
-      )
-
-  def __iter__(self) -> Iterable[Sample]:
-    columns = [
-      'state',
-      'action_type',
-      'legal_moves',
-      'chosen_index',
-      'decision',
-      'role',
-      'match_index',
-      'game_index',
-      'ply_index'
-    ]
-    for path in self.paths:
-      parquet_file = pq.ParquetFile(path)
-      for batch in parquet_file.iter_batches(batch_size=self.batch_rows, columns=columns):
-        rows = batch.to_pydict()
-        for sample in self._iter_samples(rows):
-          yield sample
 
 
 def split_by_match(df: pd.DataFrame, val_ratio: float, seed: int) -> Tuple[List[int], List[int]]:
@@ -212,8 +137,9 @@ def split_by_match(df: pd.DataFrame, val_ratio: float, seed: int) -> Tuple[List[
 
 
 def collate_batch(batch: List[Sample]) -> Dict[str, Any]:
-  move_items = []
-  double_items = []
+  move_items: List[Sample] = []
+  double_items: List[Sample] = []
+  value_items: List[Sample] = []
 
   for sample in batch:
     if sample.action_type == 'move':
@@ -228,6 +154,9 @@ def collate_batch(batch: List[Sample]) -> Dict[str, Any]:
       if sample.decision is None:
         continue
       double_items.append(sample)
+
+    if sample.game_result is not None and sample.match_result is not None:
+      value_items.append(sample)
 
   batch_out: Dict[str, Any] = {}
 
@@ -259,6 +188,16 @@ def collate_batch(batch: List[Sample]) -> Dict[str, Any]:
     batch_out['double'] = {
       'state': torch.from_numpy(state_array),
       'decision': torch.from_numpy(decision_array)
+    }
+
+  if value_items:
+    state_array = np.stack([sample.state for sample in value_items]).astype(np.float32, copy=False)
+    game_array = np.array([sample.game_result for sample in value_items], dtype=np.float32)
+    match_array = np.array([sample.match_result for sample in value_items], dtype=np.float32)
+    batch_out['value'] = {
+      'state': torch.from_numpy(state_array),
+      'game_target': torch.from_numpy(game_array),
+      'match_target': torch.from_numpy(match_array)
     }
 
   return batch_out

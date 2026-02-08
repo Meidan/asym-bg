@@ -1,0 +1,14 @@
+{
+  "data_path": "data/asymmetric-selfplay",
+  "batch_size": 128,
+  "epochs": 5,
+  "learning_rate": 0.001,
+  "hidden_size": 128,
+  "double_loss_weight": 0.5,
+  "value_game_weight": 0.5,
+  "value_match_weight": 0.5,
+  "eval_split": 0.1,
+  "seed": 42,
+  "device": "auto",
+  "save_path": "ml/checkpoints/asym_policy_selfplay.pt"
+}

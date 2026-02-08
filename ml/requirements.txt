@@ -1,4 +1,5 @@
 pytorch
+pytorch-gpu
 pyarrow
 pandas
 numpy

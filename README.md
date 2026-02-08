@@ -88,6 +88,20 @@ BOT_MODEL_DOUBLE_PATH=ml/checkpoints/asym_policy_double.onnx
 ```
 Note: `onnxruntime-node` is an optional dependency. If it isn’t available (common on Alpine), the server falls back to heuristics.
 
+Heuristic bot options (server):
+```
+BOT_HEURISTIC_POLICY=gnubg
+BOT_GNUBG_TIMEOUT_MS=8000
+GNUBG_PATH=gnubg
+```
+`gnubg` uses cubeless equity for the foresight role and cubeful equity for the doubling role.
+
+Heuristic policy for scripts:
+```
+HEURISTIC_POLICY=gnubg node scripts/simulate-asymmetric.js
+GNUBG_TIMEOUT_MS=8000 node scripts/eval-vs-heuristic.js
+```
+
 ## Notes
 - No persistence yet (in‑memory games only).
 - WebSocket URL can be overridden with `VITE_WS_URL` on the client.

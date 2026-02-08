@@ -25,12 +25,8 @@ const { createMatch, updateMatchScore, canOfferDoubleNow } = require('./src/engi
 const { getOpponent } = require('./src/engine/board');
 const { stepAutomatedTurn } = require('./src/engine/automation');
 const { createModelPolicy } = require('./src/bot/modelPolicy');
-const {
-  chooseHeuristicMove,
-  chooseForesightMove,
-  shouldOfferDouble,
-  shouldAcceptDouble
-} = require('./src/bot/heuristics');
+const { createHeuristicController } = require('./src/bot/heuristics');
+const { shutdownGnubg } = require('./src/bot/gnubg');
 
 const PORT = process.env.WS_PORT || 8080;
 const HEALTH_PORT = process.env.HEALTH_PORT || 8081;
@@ -40,6 +36,9 @@ const DEFAULT_TURN_DELAY_MS = Number(process.env.TURN_DELAY_MS) || 5_000;
 const BOT_ACCEPT_RATE = 0.5;
 const BOT_HUMAN_DELAY_MS = 500;
 const BOT_POLICY = process.env.BOT_POLICY || 'heuristic';
+const BOT_HEURISTIC_POLICY = process.env.BOT_HEURISTIC_POLICY || 'gnubg';
+const BOT_GNUBG_TIMEOUT_RAW = Number(process.env.BOT_GNUBG_TIMEOUT_MS);
+const BOT_GNUBG_TIMEOUT_MS = Number.isFinite(BOT_GNUBG_TIMEOUT_RAW) ? BOT_GNUBG_TIMEOUT_RAW : undefined;
 const BOT_MODEL_MOVE_PATH = process.env.BOT_MODEL_MOVE_PATH || '';
 const BOT_MODEL_DOUBLE_PATH = process.env.BOT_MODEL_DOUBLE_PATH || '';
 
@@ -67,8 +66,16 @@ const wss = new WebSocket.Server({ port: PORT });
 
 const games = new Map();
 const pendingGames = new Map();
+const healthSockets = new Set();
+const pendingTimeouts = new Set();
+let timerInterval = null;
 
 console.log(`[${new Date().toISOString()}] WebSocket server starting...`);
+
+healthServer.on('connection', (socket) => {
+  healthSockets.add(socket);
+  socket.on('close', () => healthSockets.delete(socket));
+});
 
 function generateGameId() {
   return randomBytes(6).toString('hex');
@@ -412,7 +419,7 @@ function finalizeGame(game) {
     return;
   }
 
-  setTimeout(() => {
+  scheduleTimeout(() => {
     const newState = rollForFirst(createGame({
       variant: game.variant,
       asymmetricRoles: game.match?.asymmetricRoles
@@ -527,26 +534,22 @@ async function createBotPlayers(game) {
     return botPlayer === 'white' ? { white: modelPolicy } : { black: modelPolicy };
   }
 
+  if (isAsymmetric) {
+    const controller = createHeuristicController({
+      role: isForesightBot ? 'foresight' : 'doubling',
+      policy: BOT_HEURISTIC_POLICY,
+      gnubgTimeoutMs: BOT_GNUBG_TIMEOUT_MS
+    });
+    return botPlayer === 'white' ? { white: controller } : { black: controller };
+  }
+
   const controller = {
     getMove: async (state, legalMoves) => {
-      if (state.variant === 'asymmetric') {
-        return isForesightBot
-          ? chooseForesightMove(state, botPlayer)
-          : chooseHeuristicMove(state, botPlayer);
-      }
       if (legalMoves.length === 0) return [];
       return legalMoves[Math.floor(Math.random() * legalMoves.length)];
     },
-    offerDouble: async (state) => {
-      if (state.variant !== 'asymmetric') return false;
-      return shouldOfferDouble(state, botPlayer);
-    },
-    acceptDouble: async (state) => {
-      if (state.variant !== 'asymmetric') {
-        return Math.random() < (game.bot.acceptRate ?? BOT_ACCEPT_RATE);
-      }
-      return shouldAcceptDouble(state, botPlayer);
-    }
+    offerDouble: async () => false,
+    acceptDouble: async () => Math.random() < (game.bot.acceptRate ?? BOT_ACCEPT_RATE)
   };
 
   return botPlayer === 'white' ? { white: controller } : { black: controller };
@@ -561,12 +564,15 @@ function enqueueBotAction(game) {
 
   game.botThinking = true;
   const delayMs = Number.isFinite(game.botDelayMs) ? game.botDelayMs : 0;
-  setTimeout(() => {
+  scheduleTimeout(() => {
     processBotActions(game)
       .then((shouldContinue) => {
         if (shouldContinue) {
           game.botQueued = true;
         }
+      })
+      .catch((error) => {
+        console.error('Bot action failed:', error?.message || error);
       })
       .finally(() => {
         game.botThinking = false;
@@ -722,8 +728,28 @@ function clampNumber(value, min, max, fallback) {
   return Math.max(min, Math.min(max, num));
 }
 
-setInterval(() => {
+function scheduleTimeout(fn, delayMs) {
+  const handle = setTimeout(() => {
+    pendingTimeouts.delete(handle);
+    fn();
+  }, delayMs);
+  pendingTimeouts.add(handle);
+  return handle;
+}
+
+timerInterval = setInterval(() => {
   for (const game of games.values()) {
+    if (
+      game.bot &&
+      !game.matchOver &&
+      game.state?.variant === 'asymmetric' &&
+      game.state.currentPlayer === game.bot.player &&
+      !game.pendingDoubleOfferer &&
+      !game.botThinking &&
+      !game.botQueued
+    ) {
+      enqueueBotAction(game);
+    }
     updateTimer(game);
     if (!game.matchOver && game.timers.activePlayer) {
       sendTimerState(game);
@@ -734,10 +760,49 @@ setInterval(() => {
 console.log(`[${new Date().toISOString()}] WebSocket server running on ws://localhost:${PORT}`);
 console.log(`[${new Date().toISOString()}] Environment: ${process.env.NODE_ENV || 'development'}`);
 
-process.on('SIGTERM', () => {
-  wss.close(() => process.exit(0));
-});
+let shuttingDown = false;
+function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[${new Date().toISOString()}] Received ${signal}. Shutting down...`);
 
-process.on('SIGINT', () => {
-  wss.close(() => process.exit(0));
-});
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+
+  for (const timeout of pendingTimeouts) {
+    clearTimeout(timeout);
+  }
+  pendingTimeouts.clear();
+
+  shutdownGnubg();
+
+  for (const client of wss.clients) {
+    try {
+      client.terminate();
+    } catch (error) {
+      // Ignore cleanup errors during shutdown
+    }
+  }
+
+  for (const socket of healthSockets) {
+    try {
+      socket.destroy();
+    } catch (error) {
+      // Ignore cleanup errors during shutdown
+    }
+  }
+
+  const closeTasks = [
+    new Promise((resolve) => healthServer.close(resolve)),
+    new Promise((resolve) => wss.close(resolve))
+  ];
+
+  Promise.allSettled(closeTasks).finally(() => process.exit(0));
+
+  setTimeout(() => process.exit(0), 2000).unref();
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

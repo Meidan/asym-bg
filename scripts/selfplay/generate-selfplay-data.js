@@ -12,22 +12,21 @@ const path = require('path');
 const fs = require('fs');
 const parquet = require('parquetjs-lite');
 const { Worker, isMainThread, parentPort, workerData } = require('worker_threads');
-const { createMatch } = require('../src/engine/match');
-const { runAutomatedMatch } = require('../src/engine/automation');
-const { encodeState, serializeLegalMoves, serializeMoveSequence, STATE_VECTOR_LENGTH } = require('../src/engine/encode');
-const { createHeuristicController } = require('../src/bot/heuristics');
+const { createMatch } = require('../../src/engine/match');
+const { runAutomatedMatch } = require('../../src/engine/automation');
+const { encodeState, serializeLegalMoves, serializeMoveSequence, STATE_VECTOR_LENGTH } = require('../../src/engine/encode');
+const { createModelPolicy } = require('../../src/bot/modelPolicy');
 
-const MATCHES = Number(process.env.MATCHES) || 100*100;
+const MATCHES = Number(process.env.MATCHES) || 50;
 const TARGET_SCORE = Number(process.env.TARGET_SCORE) || 5;
-const THREADS = Math.max(1, Number(process.env.THREADS) || 8);
-const OUTPUT_PATH = process.env.OUTPUT || path.join('data', 'asymmetric-training.parquet');
+const THREADS = Math.max(1, Number(process.env.THREADS) || 1);
+const OUTPUT_PATH = process.env.OUTPUT || path.join('data', 'asymmetric-selfplay.parquet');
 const FORESIGHT_PLAYER = process.env.FORESIGHT_PLAYER || 'white';
 const DOUBLING_PLAYER = process.env.DOUBLING_PLAYER || 'black';
-const HEURISTIC_POLICY = (process.env.HEURISTIC_POLICY || 'simple').toLowerCase() === 'gnubg'
-  ? 'gnubg'
-  : 'simple';
-const GNUBG_TIMEOUT_RAW = Number(process.env.GNUBG_TIMEOUT_MS);
-const GNUBG_TIMEOUT_MS = Number.isFinite(GNUBG_TIMEOUT_RAW) ? GNUBG_TIMEOUT_RAW : undefined;
+const RANDOM_ROLES = String(process.env.RANDOM_ROLES || 'false').toLowerCase() === 'true';
+const MOVE_MODEL = process.env.MOVE_MODEL || 'ml/checkpoints/asym_policy_move.onnx';
+const DOUBLE_MODEL = process.env.DOUBLE_MODEL || 'ml/checkpoints/asym_policy_double.onnx';
+const LOG_EVERY = Number(process.env.LOG_EVERY) || Math.max(1, Math.floor(MATCHES / 100));
 
 const schema = new parquet.ParquetSchema({
   state: { type: 'FLOAT', repeated: true },
@@ -39,26 +38,12 @@ const schema = new parquet.ParquetSchema({
   decision: { type: 'BOOLEAN', optional: true },
   match_index: { type: 'INT32' },
   game_index: { type: 'INT32' },
-  ply_index: { type: 'INT32' }
+  ply_index: { type: 'INT32' },
+  game_result: { type: 'FLOAT', optional: true },
+  match_result: { type: 'FLOAT', optional: true },
+  game_points: { type: 'FLOAT', optional: true },
+  match_points: { type: 'FLOAT', optional: true }
 });
-
-function buildPlayers(roles) {
-  const makeController = (role) => createHeuristicController({
-    role,
-    policy: HEURISTIC_POLICY,
-    gnubgTimeoutMs: GNUBG_TIMEOUT_MS
-  });
-
-  const controllers = {
-    foresight: makeController('foresight'),
-    doubling: makeController('doubling')
-  };
-
-  const players = {};
-  players[roles.foresightPlayer] = controllers.foresight;
-  players[roles.doublingPlayer] = controllers.doubling;
-  return players;
-}
 
 function resolveOutputPath(basePath, workerId, threads) {
   if (threads <= 1) {
@@ -70,32 +55,58 @@ function resolveOutputPath(basePath, workerId, threads) {
   return path.join(dir, `part-${String(workerId).padStart(4, '0')}.parquet`);
 }
 
+function pickRoles() {
+  if (RANDOM_ROLES) {
+    return Math.random() < 0.5
+      ? { foresightPlayer: 'white', doublingPlayer: 'black' }
+      : { foresightPlayer: 'black', doublingPlayer: 'white' };
+  }
+  return { foresightPlayer: FORESIGHT_PLAYER, doublingPlayer: DOUBLING_PLAYER };
+}
+
+async function createPolicies(getMatch) {
+  const white = await createModelPolicy({
+    moveModelPath: MOVE_MODEL,
+    doubleModelPath: DOUBLE_MODEL,
+    player: 'white',
+    getMatch
+  });
+  const black = await createModelPolicy({
+    moveModelPath: MOVE_MODEL,
+    doubleModelPath: DOUBLE_MODEL,
+    player: 'black',
+    getMatch
+  });
+  return { white, black };
+}
+
 async function runMatches(matchCount, startIndex, outputPath, workerId) {
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   const writer = await parquet.ParquetWriter.openFile(schema, outputPath);
   let totalRows = 0;
 
+  let currentMatch = null;
+  const policies = await createPolicies(() => currentMatch);
+
   for (let matchIndex = 0; matchIndex < matchCount; matchIndex += 1) {
     const globalMatchIndex = startIndex + matchIndex;
-    const roles = {
-      foresightPlayer: FORESIGHT_PLAYER,
-      doublingPlayer: DOUBLING_PLAYER
-    };
-
+    const roles = pickRoles();
+    const rows = [];
+    const rowsByGame = new Map();
     let plyIndex = 0;
-    const pendingRows = [];
 
-    const match = createMatch({
+    currentMatch = createMatch({
       type: 'limited',
       targetScore: TARGET_SCORE,
       variant: 'asymmetric',
       asymmetricRoles: roles
     });
 
-    const players = buildPlayers(roles);
+    const players = { white: policies.white, black: policies.black };
 
     const hooks = {
-      onGameStart: () => {
+      onGameStart: ({ match }) => {
+        currentMatch = match;
         plyIndex = 0;
       },
       onDecision: ({ match, state, player, actionType, legalMoves, chosenMoves, decision }) => {
@@ -116,7 +127,7 @@ async function runMatches(matchCount, startIndex, outputPath, workerId) {
           }
         }
 
-        pendingRows.push({
+        const row = {
           state: stateVec,
           action_type: actionType,
           player,
@@ -126,26 +137,57 @@ async function runMatches(matchCount, startIndex, outputPath, workerId) {
           decision: typeof decision === 'boolean' ? decision : null,
           match_index: globalMatchIndex,
           game_index: match.currentGame,
-          ply_index: plyIndex
-        });
+          ply_index: plyIndex,
+          game_result: null,
+          match_result: null,
+          game_points: null,
+          match_points: null
+        };
+
+        const idx = rows.length;
+        rows.push(row);
+        if (!rowsByGame.has(match.currentGame)) {
+          rowsByGame.set(match.currentGame, []);
+        }
+        rowsByGame.get(match.currentGame).push(idx);
 
         plyIndex += 1;
         totalRows += 1;
+      },
+      onGameEnd: ({ match, state }) => {
+        const gameWinner = state.winner;
+        if (!gameWinner) return;
+        const points = state.pointsAwarded || 1;
+        const gameRows = rowsByGame.get(match.currentGame) || [];
+        for (const idx of gameRows) {
+          const row = rows[idx];
+          row.game_result = row.player === gameWinner ? 1.0 : -1.0;
+          row.game_points = row.player === gameWinner ? points : -points;
+        }
       }
     };
 
-    if ((matchIndex + 1) % (MATCHES /100) === 0) {
+    if (LOG_EVERY > 0 && (matchIndex + 1) % LOG_EVERY === 0) {
       const prefix = workerId !== null ? `[worker ${workerId}] ` : '';
-      console.log(`${prefix}Awaiting ${matchIndex + 1} / ${matchCount} matches (${totalRows} rows)`);
+      console.log(`${prefix}Starting ${matchIndex + 1} / ${matchCount} matches (${totalRows} rows)`);
     }
 
-    await runAutomatedMatch(match, players, undefined, hooks);
+    const finalMatch = await runAutomatedMatch(currentMatch, players, undefined, hooks);
 
-    for (const row of pendingRows) {
+    if (finalMatch.winner) {
+      const winner = finalMatch.winner;
+      const winnerPoints = finalMatch.score[winner];
+      for (const row of rows) {
+        row.match_result = row.player === winner ? 1.0 : -1.0;
+        row.match_points = row.player === winner ? winnerPoints : -winnerPoints;
+      }
+    }
+
+    for (const row of rows) {
       await writer.appendRow(row);
     }
 
-    if ((matchIndex + 1) % (MATCHES /100) === 0) {
+    if (LOG_EVERY > 0 && (matchIndex + 1) % LOG_EVERY === 0) {
       const prefix = workerId !== null ? `[worker ${workerId}] ` : '';
       console.log(`${prefix}Completed ${matchIndex + 1} / ${matchCount} matches (${totalRows} rows)`);
     }
@@ -220,7 +262,7 @@ if (isMainThread) {
   console.log(`Running ${MATCHES} matches on ${THREADS} threads`);
 
   runInWorkers().catch((err) => {
-    console.error('Data generation failed:', err);
+    console.error('Self-play data generation failed:', err);
     process.exitCode = 1;
   });
 } else {
@@ -229,7 +271,7 @@ if (isMainThread) {
   runMatches(matchCount, startIndex, outputPath, workerId)
     .then((result) => parentPort.postMessage(result))
     .catch((err) => {
-      console.error('Worker data generation failed:', err);
+      console.error('Worker self-play generation failed:', err);
       process.exitCode = 1;
     });
 }

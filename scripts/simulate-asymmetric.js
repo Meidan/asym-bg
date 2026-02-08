@@ -11,18 +11,18 @@ require('ts-node').register({
 const { Worker, isMainThread, parentPort, workerData } = require('worker_threads');
 const { createMatch } = require('../src/engine/match');
 const { runAutomatedMatch } = require('../src/engine/automation');
-const {
-  chooseHeuristicMove,
-  chooseForesightMove,
-  shouldOfferDouble,
-  shouldAcceptDouble
-} = require('../src/bot/heuristics');
+const { createHeuristicController } = require('../src/bot/heuristics');
 
 const MATCHES = Number(process.env.MATCHES) || 12;
 const TARGET_SCORE = Number(process.env.TARGET_SCORE) || 5;
 const THREADS = Math.max(1, Number(process.env.THREADS) || 4);
 const DEFAULT_FORESIGHT_PLAYER = 'white';
 const DEFAULT_DOUBLING_PLAYER = 'black';
+const HEURISTIC_POLICY = (process.env.HEURISTIC_POLICY || 'simple').toLowerCase() === 'gnubg'
+  ? 'gnubg'
+  : 'simple';
+const GNUBG_TIMEOUT_RAW = Number(process.env.GNUBG_TIMEOUT_MS);
+const GNUBG_TIMEOUT_MS = Number.isFinite(GNUBG_TIMEOUT_RAW) ? GNUBG_TIMEOUT_RAW : undefined;
 
 async function runMatches(matchCount, startIndex) {
   let foresightWins = 0;
@@ -32,16 +32,16 @@ async function runMatches(matchCount, startIndex) {
     doublingPlayer: DEFAULT_DOUBLING_PLAYER
   };
   const players = {
-    [roles.foresightPlayer]: {
-      getMove: async (state) => chooseForesightMove(state, state.currentPlayer),
-      offerDouble: async (state) => shouldOfferDouble(state, state.currentPlayer),
-      acceptDouble: async (state) => shouldAcceptDouble(state, state.currentPlayer)
-    },
-    [roles.doublingPlayer]: {
-      getMove: async (state) => chooseHeuristicMove(state, state.currentPlayer),
-      offerDouble: async (state) => shouldOfferDouble(state, state.currentPlayer),
-      acceptDouble: async (state) => shouldAcceptDouble(state, state.currentPlayer)
-    }
+    [roles.foresightPlayer]: createHeuristicController({
+      role: 'foresight',
+      policy: HEURISTIC_POLICY,
+      gnubgTimeoutMs: GNUBG_TIMEOUT_MS
+    }),
+    [roles.doublingPlayer]: createHeuristicController({
+      role: 'doubling',
+      policy: HEURISTIC_POLICY,
+      gnubgTimeoutMs: GNUBG_TIMEOUT_MS
+    })
   };
 
   for (let i = 0; i < matchCount; i++) {
