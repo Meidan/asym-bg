@@ -331,10 +331,6 @@ export async function evaluateStateWithGnubg(options: GnuBgEvalOptions): Promise
     setCache(key, cached);
     const onRollEquity = equity === 'cubeless' ? cached.cubeless : cached.cubeful;
     const returned = perspective === state.currentPlayer ? onRollEquity : -onRollEquity;
-    console.log(
-      `gnubg eval took ${durationMs}ms: cubeless=${cached.cubeless.toFixed(4)} ` +
-      `cubeful=${cached.cubeful.toFixed(4)} equity=${equity} returned=${returned.toFixed(4)}`
-    );
   }
 
   const onRollEquity = equity === 'cubeless' ? cached.cubeless : cached.cubeful;

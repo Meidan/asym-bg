@@ -36,9 +36,7 @@ const DEFAULT_TURN_DELAY_MS = Number(process.env.TURN_DELAY_MS) || 5_000;
 const BOT_ACCEPT_RATE = 0.5;
 const BOT_HUMAN_DELAY_MS = 500;
 const BOT_POLICY = process.env.BOT_POLICY || 'heuristic';
-const BOT_HEURISTIC_POLICY = (process.env.BOT_HEURISTIC_POLICY || 'simple').toLowerCase() === 'gnubg'
-  ? 'gnubg'
-  : 'simple';
+const BOT_HEURISTIC_POLICY = process.env.BOT_HEURISTIC_POLICY || 'gnubg';
 const BOT_GNUBG_TIMEOUT_RAW = Number(process.env.BOT_GNUBG_TIMEOUT_MS);
 const BOT_GNUBG_TIMEOUT_MS = Number.isFinite(BOT_GNUBG_TIMEOUT_RAW) ? BOT_GNUBG_TIMEOUT_RAW : undefined;
 const BOT_MODEL_MOVE_PATH = process.env.BOT_MODEL_MOVE_PATH || '';

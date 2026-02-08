@@ -30,7 +30,7 @@ export interface HeuristicControllerOptions extends HeuristicEvalOptions {
   maxReplyCandidates?: number;
 }
 
-const DEFAULT_HEURISTIC_POLICY: HeuristicPolicy = 'simple';
+const DEFAULT_HEURISTIC_POLICY: HeuristicPolicy = 'gnubg';
 const DEFAULT_GNUBG_EQUITY_FOR_HEURISTIC: GnuBgEquityType = 'cubeful';
 const DEFAULT_GNUBG_EQUITY_FOR_FORESIGHT: GnuBgEquityType = 'cubeless';
 const GNUBG_OFFER_DOUBLE_THRESHOLD = 0.5;
@@ -395,6 +395,7 @@ export async function shouldAcceptDoubleWithPolicy(
 
 export function createHeuristicController(options: HeuristicControllerOptions): IPlayer {
   const policy = options.policy ?? DEFAULT_HEURISTIC_POLICY;
+  console.log(`Creating heuristic controller with policy: ${policy}`);
   const moveEquity = options.equity ?? (options.role === 'foresight'
     ? DEFAULT_GNUBG_EQUITY_FOR_FORESIGHT
     : DEFAULT_GNUBG_EQUITY_FOR_HEURISTIC);
