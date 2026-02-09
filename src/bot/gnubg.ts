@@ -320,6 +320,53 @@ async function runGnubgEval(state: GameState, timeoutMs?: number): Promise<EvalC
   return parsed;
 }
 
+async function runGnubgEvalWithOutput(state: GameState, timeoutMs?: number): Promise<{ parsed: EvalCacheEntry; output: string }> {
+  const positionId = buildPositionId(state);
+  const turnIndex = getPlayerIndex(state.currentPlayer);
+  const cubeValue = Math.max(1, state.doublingCube.value);
+  const owner = state.doublingCube.owner;
+  const cubeOwnerCommand = owner === null
+    ? 'set cube centre'
+    : `set cube owner ${getPlayerIndex(owner)}`;
+
+  const commands = [
+    'new game',
+    `set turn ${turnIndex}`,
+    `set board ${positionId}`,
+    `set cube value ${cubeValue}`,
+    cubeOwnerCommand,
+    'eval'
+  ].join('\n');
+
+  const output = await getRunner().evaluate(commands, timeoutMs);
+  const parsed = parseEvalOutput(output);
+  if (!parsed) {
+    throw new Error(`Unable to parse gnubg eval output. output=${JSON.stringify(output)}`);
+  }
+  return { parsed, output };
+}
+
+function parseDoubleDecision(output: string): { offer?: boolean; accept?: boolean } {
+  const txt = getDoubleDecisionLine(output.toLowerCase());
+  const result: { offer?: boolean; accept?: boolean } = {};
+
+  if (txt.includes('too good')) {
+    result.offer = false;
+  } else if (txt.includes('no double') || txt.includes('no redouble')) {
+    result.offer = false;
+  } else if (txt.includes('double') || txt.includes('redouble')) {
+    result.offer = true;
+  }
+
+  if (txt.includes('take') ) {
+    result.accept = true;
+  } else if (txt.includes('drop')) {
+    result.accept = false;
+  }
+
+  return result;
+}
+
 export async function evaluateStateWithGnubg(options: GnuBgEvalOptions): Promise<number> {
   const { state, perspective, equity, timeoutMs } = options;
   const key = cacheKey(state);
@@ -336,3 +383,48 @@ export async function evaluateStateWithGnubg(options: GnuBgEvalOptions): Promise
   const onRollEquity = equity === 'cubeless' ? cached.cubeless : cached.cubeful;
   return perspective === state.currentPlayer ? onRollEquity : -onRollEquity;
 }
+
+export interface GnubgDoubleDecision {
+  equity: number;
+  offer?: boolean;
+  accept?: boolean;
+}
+
+export async function evaluateStateWithGnubgDouble(options: GnuBgEvalOptions): Promise<GnubgDoubleDecision> {
+  const { state, perspective, equity, timeoutMs } = options;
+  const key = cacheKey(state);
+  let cached = evalCache.get(key);
+  let output: string | null = null;
+  if (!cached) {
+    const startMs = Date.now();
+    const res = await runGnubgEvalWithOutput(state, timeoutMs);
+    cached = res.parsed;
+    output = res.output;
+    const durationMs = Date.now() - startMs;
+    setCache(key, cached);
+  } else {
+    // still attempt to get raw output for parsing by running a quick eval without caching
+    try {
+      const res = await runGnubgEvalWithOutput(state, timeoutMs);
+      output = res.output;
+    } catch (err) {
+      output = null;
+    }
+  }
+
+  const onRollEquity = equity === 'cubeless' ? cached.cubeless : cached.cubeful;
+  const signedEquity = perspective === state.currentPlayer ? onRollEquity : -onRollEquity;
+
+  const decision = output ? parseDoubleDecision(output) : {};
+  return { equity: signedEquity, offer: decision.offer, accept: decision.accept };
+}
+function getDoubleDecisionLine(output: string) {
+  const lines = output.split('\n');
+  for (const line of lines) {
+    if (line.startsWith('proper cube action')) {
+      return line;
+    }
+  }
+  return '';
+}
+

@@ -2,7 +2,7 @@ import { GameState, Move, Player, IPlayer } from '../engine/types';
 import { getOpponent, allCheckersInHomeBoard } from '../engine/board';
 import { getLegalMoves } from '../engine/moves';
 import { makeMove } from '../engine/game';
-import { evaluateStateWithGnubg, GnuBgEquityType } from './gnubg';
+import { evaluateStateWithGnubg, GnuBgEquityType, evaluateStateWithGnubgDouble } from './gnubg';
 
 export const DEFAULT_MAX_CANDIDATES = 30;
 export const DEFAULT_MAX_REPLY_CANDIDATES = 30;
@@ -375,9 +375,16 @@ export async function shouldOfferDoubleWithPolicy(
   const policy = options?.policy ?? DEFAULT_HEURISTIC_POLICY;
   if (policy !== 'gnubg') return shouldOfferDouble(state, player);
   const equityType = options?.equity ?? DEFAULT_GNUBG_EQUITY_FOR_HEURISTIC;
-  const equity = await evaluateGnubgOrNull(state, player, equityType, options);
-  if (equity === null) return shouldOfferDouble(state, player);
-  return equity >= GNUBG_OFFER_DOUBLE_THRESHOLD;
+  try {
+    const decision = await evaluateStateWithGnubgDouble({ state, perspective: player, equity: equityType, timeoutMs: options?.gnubgTimeoutMs });
+    if (typeof decision.offer === 'boolean') return decision.offer;
+    console.warn('Gnubg did not return explicit double decision; falling back to equity threshold');
+    // fallback to equity-based decision when gnubg output didn't include explicit decision
+    if (typeof decision.equity === 'number') return decision.equity >= GNUBG_OFFER_DOUBLE_THRESHOLD;
+    return shouldOfferDouble(state, player);
+  } catch (err) {
+    return shouldOfferDouble(state, player);
+  }
 }
 
 export async function shouldAcceptDoubleWithPolicy(
@@ -388,9 +395,15 @@ export async function shouldAcceptDoubleWithPolicy(
   const policy = options?.policy ?? DEFAULT_HEURISTIC_POLICY;
   if (policy !== 'gnubg') return shouldAcceptDouble(state, player);
   const equityType = options?.equity ?? DEFAULT_GNUBG_EQUITY_FOR_HEURISTIC;
-  const equity = await evaluateGnubgOrNull(state, player, equityType, options);
-  if (equity === null) return shouldAcceptDouble(state, player);
-  return equity >= GNUBG_ACCEPT_DOUBLE_THRESHOLD;
+  try {
+    const decision = await evaluateStateWithGnubgDouble({ state, perspective: player, equity: equityType, timeoutMs: options?.gnubgTimeoutMs });
+    if (typeof decision.accept === 'boolean') return decision.accept;
+    console.warn('Gnubg did not return explicit accept decision; falling back to equity threshold');
+    if (typeof decision.equity === 'number') return decision.equity >= GNUBG_ACCEPT_DOUBLE_THRESHOLD;
+    return shouldAcceptDouble(state, player);
+  } catch (err) {
+    return shouldAcceptDouble(state, player);
+  }
 }
 
 export function createHeuristicController(options: HeuristicControllerOptions): IPlayer {
