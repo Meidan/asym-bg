@@ -24,8 +24,8 @@ const OUTPUT_PATH = process.env.OUTPUT || path.join('data', 'asymmetric-selfplay
 const FORESIGHT_PLAYER = process.env.FORESIGHT_PLAYER || 'white';
 const DOUBLING_PLAYER = process.env.DOUBLING_PLAYER || 'black';
 const RANDOM_ROLES = String(process.env.RANDOM_ROLES || 'false').toLowerCase() === 'true';
-const MOVE_MODEL = process.env.MOVE_MODEL || 'ml/checkpoints/asym_policy_move.onnx';
-const DOUBLE_MODEL = process.env.DOUBLE_MODEL || 'ml/checkpoints/asym_policy_double.onnx';
+const VALUE_MODEL = process.env.VALUE_MODEL || process.env.MOVE_MODEL || 'ml/checkpoints/asym_value.onnx';
+const DOUBLE_MODEL = process.env.DOUBLE_MODEL || 'ml/checkpoints/asym_value_double.onnx';
 const LOG_EVERY = Number(process.env.LOG_EVERY) || Math.max(1, Math.floor(MATCHES / 100));
 
 const schema = new parquet.ParquetSchema({
@@ -66,13 +66,13 @@ function pickRoles() {
 
 async function createPolicies(getMatch) {
   const white = await createModelPolicy({
-    moveModelPath: MOVE_MODEL,
+    valueModelPath: VALUE_MODEL,
     doubleModelPath: DOUBLE_MODEL,
     player: 'white',
     getMatch
   });
   const black = await createModelPolicy({
-    moveModelPath: MOVE_MODEL,
+    valueModelPath: VALUE_MODEL,
     doubleModelPath: DOUBLE_MODEL,
     player: 'black',
     getMatch

@@ -378,7 +378,7 @@ export async function shouldOfferDoubleWithPolicy(
   try {
     const decision = await evaluateStateWithGnubgDouble({ state, perspective: player, equity: equityType, timeoutMs: options?.gnubgTimeoutMs });
     if (typeof decision.offer === 'boolean') return decision.offer;
-    console.warn('Gnubg did not return explicit double decision; falling back to equity threshold');
+    console.warn('Gnubg did not return explicit double offer decision; falling back to equity threshold', state.doublingCube, player);
     // fallback to equity-based decision when gnubg output didn't include explicit decision
     if (typeof decision.equity === 'number') return decision.equity >= GNUBG_OFFER_DOUBLE_THRESHOLD;
     return shouldOfferDouble(state, player);
@@ -398,7 +398,8 @@ export async function shouldAcceptDoubleWithPolicy(
   try {
     const decision = await evaluateStateWithGnubgDouble({ state, perspective: player, equity: equityType, timeoutMs: options?.gnubgTimeoutMs });
     if (typeof decision.accept === 'boolean') return decision.accept;
-    console.warn('Gnubg did not return explicit accept decision; falling back to equity threshold');
+    await evaluateStateWithGnubgDouble({ state, perspective: player, equity: equityType, timeoutMs: options?.gnubgTimeoutMs }, true);
+    console.warn('Gnubg did not return explicit double accept decision; falling back to equity threshold', state.doublingCube, player);
     if (typeof decision.equity === 'number') return decision.equity >= GNUBG_ACCEPT_DOUBLE_THRESHOLD;
     return shouldAcceptDouble(state, player);
   } catch (err) {

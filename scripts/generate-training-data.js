@@ -17,15 +17,13 @@ const { runAutomatedMatch } = require('../src/engine/automation');
 const { encodeState, serializeLegalMoves, serializeMoveSequence, STATE_VECTOR_LENGTH } = require('../src/engine/encode');
 const { createHeuristicController } = require('../src/bot/heuristics');
 
-const MATCHES = Number(process.env.MATCHES) || 100*100;
+const MATCHES = Number(process.env.MATCHES) || 10;
 const TARGET_SCORE = Number(process.env.TARGET_SCORE) || 5;
-const THREADS = Math.max(1, Number(process.env.THREADS) || 8);
+const THREADS = Math.max(1, Number(process.env.THREADS) || 1);
 const OUTPUT_PATH = process.env.OUTPUT || path.join('data', 'asymmetric-training.parquet');
 const FORESIGHT_PLAYER = process.env.FORESIGHT_PLAYER || 'white';
 const DOUBLING_PLAYER = process.env.DOUBLING_PLAYER || 'black';
-const HEURISTIC_POLICY = (process.env.HEURISTIC_POLICY || 'simple').toLowerCase() === 'gnubg'
-  ? 'gnubg'
-  : 'simple';
+const HEURISTIC_POLICY = process.env.HEURISTIC_POLICY || 'gnubg';
 const GNUBG_TIMEOUT_RAW = Number(process.env.GNUBG_TIMEOUT_MS);
 const GNUBG_TIMEOUT_MS = Number.isFinite(GNUBG_TIMEOUT_RAW) ? GNUBG_TIMEOUT_RAW : undefined;
 
@@ -39,7 +37,11 @@ const schema = new parquet.ParquetSchema({
   decision: { type: 'BOOLEAN', optional: true },
   match_index: { type: 'INT32' },
   game_index: { type: 'INT32' },
-  ply_index: { type: 'INT32' }
+  ply_index: { type: 'INT32' },
+  game_result: { type: 'FLOAT', optional: true },
+  match_result: { type: 'FLOAT', optional: true },
+  game_points: { type: 'FLOAT', optional: true },
+  match_points: { type: 'FLOAT', optional: true }
 });
 
 function buildPlayers(roles) {
@@ -83,7 +85,8 @@ async function runMatches(matchCount, startIndex, outputPath, workerId) {
     };
 
     let plyIndex = 0;
-    const pendingRows = [];
+    const rows = [];
+    const rowsByGame = new Map();
 
     const match = createMatch({
       type: 'limited',
@@ -116,7 +119,7 @@ async function runMatches(matchCount, startIndex, outputPath, workerId) {
           }
         }
 
-        pendingRows.push({
+        const row = {
           state: stateVec,
           action_type: actionType,
           player,
@@ -126,11 +129,33 @@ async function runMatches(matchCount, startIndex, outputPath, workerId) {
           decision: typeof decision === 'boolean' ? decision : null,
           match_index: globalMatchIndex,
           game_index: match.currentGame,
-          ply_index: plyIndex
-        });
+          ply_index: plyIndex,
+          game_result: null,
+          match_result: null,
+          game_points: null,
+          match_points: null
+        };
+
+        const idx = rows.length;
+        rows.push(row);
+        if (!rowsByGame.has(match.currentGame)) {
+          rowsByGame.set(match.currentGame, []);
+        }
+        rowsByGame.get(match.currentGame).push(idx);
 
         plyIndex += 1;
         totalRows += 1;
+      },
+      onGameEnd: ({ match, state, gameIndex }) => {
+        const gameWinner = state.winner;
+        if (!gameWinner) return;
+        const points = state.pointsAwarded || 1;
+        const gameRows = rowsByGame.get(gameIndex) || [];
+        for (const idx of gameRows) {
+          const row = rows[idx];
+          row.game_result = row.player === gameWinner ? 1.0 : -1.0;
+          row.game_points = row.player === gameWinner ? points : -points;
+        }
       }
     };
 
@@ -139,9 +164,18 @@ async function runMatches(matchCount, startIndex, outputPath, workerId) {
       console.log(`${prefix}Awaiting ${matchIndex + 1} / ${matchCount} matches (${totalRows} rows)`);
     }
 
-    await runAutomatedMatch(match, players, undefined, hooks);
+    const finalMatch = await runAutomatedMatch(match, players, undefined, hooks);
 
-    for (const row of pendingRows) {
+    if (finalMatch.winner) {
+      const winner = finalMatch.winner;
+      const winnerPoints = finalMatch.score[winner];
+      for (const row of rows) {
+        row.match_result = row.player === winner ? 1.0 : -1.0;
+        row.match_points = row.player === winner ? winnerPoints : -winnerPoints;
+      }
+    }
+
+    for (const row of rows) {
       await writer.appendRow(row);
     }
 

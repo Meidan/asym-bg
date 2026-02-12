@@ -27,3 +27,22 @@ class AsymPolicyModel(nn.Module):
   def double_logits(self, state: torch.Tensor) -> torch.Tensor:
     state_emb = self.state_fc(state)
     return self.double_fc(state_emb).squeeze(-1)
+
+
+class AsymValueModel(nn.Module):
+  def __init__(self, state_dim: int, hidden_size: int = 128):
+    super().__init__()
+    self.state_fc = nn.Sequential(
+      nn.Linear(state_dim, hidden_size),
+      nn.ReLU()
+    )
+    self.value_fc = nn.Linear(hidden_size, 1)
+    self.double_fc = nn.Linear(hidden_size, 1)
+
+  def value(self, state: torch.Tensor) -> torch.Tensor:
+    state_emb = self.state_fc(state)
+    return self.value_fc(state_emb).squeeze(-1)
+
+  def double_logits(self, state: torch.Tensor) -> torch.Tensor:
+    state_emb = self.state_fc(state)
+    return self.double_fc(state_emb).squeeze(-1)

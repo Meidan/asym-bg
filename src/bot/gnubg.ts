@@ -347,6 +347,7 @@ async function runGnubgEvalWithOutput(state: GameState, timeoutMs?: number): Pro
 }
 
 function parseDoubleDecision(output: string): { offer?: boolean; accept?: boolean } {
+ 
   const txt = getDoubleDecisionLine(output.toLowerCase());
   const result: { offer?: boolean; accept?: boolean } = {};
 
@@ -358,11 +359,18 @@ function parseDoubleDecision(output: string): { offer?: boolean; accept?: boolea
     result.offer = true;
   }
 
-  if (txt.includes('take') ) {
+  if (txt.includes('take') || txt.includes('beaver')) {
     result.accept = true;
-  } else if (txt.includes('drop')) {
+  } else if (txt.includes('drop') || txt.includes('pass')) {
     result.accept = false;
   }
+
+  if (typeof result.offer !== 'boolean' && typeof result.accept !== 'boolean') {
+    console.warn("failed parsing double decision")
+    console.log(output);
+    console.log(txt);
+  }
+
 
   return result;
 }
@@ -390,7 +398,7 @@ export interface GnubgDoubleDecision {
   accept?: boolean;
 }
 
-export async function evaluateStateWithGnubgDouble(options: GnuBgEvalOptions): Promise<GnubgDoubleDecision> {
+export async function evaluateStateWithGnubgDouble(options: GnuBgEvalOptions, logOutput = false): Promise<GnubgDoubleDecision> {
   const { state, perspective, equity, timeoutMs } = options;
   const key = cacheKey(state);
   let cached = evalCache.get(key);
@@ -416,6 +424,7 @@ export async function evaluateStateWithGnubgDouble(options: GnuBgEvalOptions): P
   const signedEquity = perspective === state.currentPlayer ? onRollEquity : -onRollEquity;
 
   const decision = output ? parseDoubleDecision(output) : {};
+  if (logOutput) console.log(decision, output);
   return { equity: signedEquity, offer: decision.offer, accept: decision.accept };
 }
 function getDoubleDecisionLine(output: string) {

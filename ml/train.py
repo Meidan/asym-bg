@@ -10,8 +10,8 @@ import torch
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 
-from dataset import AsymParquetIterableDataset, collate_batch, MOVE_FEATURE_DIM
-from model import AsymPolicyModel
+from dataset import AsymParquetIterableDataset, collate_batch
+from model import AsymValueModel
 
 
 def load_config(path: str) -> Dict[str, Any]:
@@ -32,16 +32,17 @@ def train_epoch(
   optimizer,
   device,
   double_weight,
+  value_weight,
   *,
   use_amp: bool,
   grad_accum_steps: int,
   estimate_steps: int
 ):
   model.train()
-  move_loss_total = 0.0
   double_loss_total = 0.0
-  move_batches = 0
   double_batches = 0
+  value_loss_total = 0.0
+  value_batches = 0
   scaler = torch.amp.GradScaler(device.type, enabled=use_amp)
   accum_steps = 0
   estimate_steps = max(0, int(estimate_steps))
@@ -58,20 +59,15 @@ def train_epoch(
     has_loss = False
     with torch.amp.autocast(device.type, enabled=use_amp):
       loss = 0.0
-
-      if 'move' in batch:
-        move_batch = batch['move']
-        state = move_batch['state'].to(device)
-        moves = move_batch['moves'].to(device)
-        mask = move_batch['mask'].to(device)
-        chosen = move_batch['chosen'].to(device)
-
-        scores = model.score_moves(state, moves)
-        scores = scores.masked_fill(~mask, torch.finfo(scores.dtype).min)
-        loss_move = F.cross_entropy(scores, chosen)
-        loss = loss + loss_move
-        move_loss_total += loss_move.item()
-        move_batches += 1
+      if 'value' in batch:
+        value_batch = batch['value']
+        state = value_batch['state'].to(device)
+        target = value_batch['target'].to(device)
+        pred = model.value(state)
+        loss_value = F.mse_loss(pred, target)
+        loss = loss + value_weight * loss_value
+        value_loss_total += loss_value.item()
+        value_batches += 1
         has_loss = True
 
       if 'double' in batch:
@@ -116,41 +112,31 @@ def train_epoch(
     optimizer.zero_grad(set_to_none=True)
 
   return {
-    'move_loss': move_loss_total / max(1, move_batches),
-    'double_loss': double_loss_total / max(1, double_batches)
+    'double_loss': double_loss_total / max(1, double_batches),
+    'value_loss': value_loss_total / max(1, value_batches)
   }
 
 
-def eval_epoch(model, loader, device, double_weight, *, use_amp: bool):
+def eval_epoch(model, loader, device, *, use_amp: bool):
   model.eval()
-  move_loss_total = 0.0
   double_loss_total = 0.0
-  move_batches = 0
   double_batches = 0
-  move_correct = 0
-  move_total = 0
   double_correct = 0
   double_total = 0
+  value_loss_total = 0.0
+  value_batches = 0
 
   with torch.no_grad():
     for batch in loader:
       with torch.amp.autocast(device.type, enabled=use_amp):
-        if 'move' in batch:
-          move_batch = batch['move']
-          state = move_batch['state'].to(device)
-          moves = move_batch['moves'].to(device)
-          mask = move_batch['mask'].to(device)
-          chosen = move_batch['chosen'].to(device)
-
-          scores = model.score_moves(state, moves)
-          scores = scores.masked_fill(~mask, torch.finfo(scores.dtype).min)
-          loss_move = F.cross_entropy(scores, chosen)
-          move_loss_total += loss_move.item()
-          move_batches += 1
-
-          preds = scores.argmax(dim=1)
-          move_correct += (preds == chosen).sum().item()
-          move_total += chosen.size(0)
+        if 'value' in batch:
+          value_batch = batch['value']
+          state = value_batch['state'].to(device)
+          target = value_batch['target'].to(device)
+          pred = model.value(state)
+          loss_value = F.mse_loss(pred, target)
+          value_loss_total += loss_value.item()
+          value_batches += 1
 
         if 'double' in batch:
           double_batch = batch['double']
@@ -166,10 +152,9 @@ def eval_epoch(model, loader, device, double_weight, *, use_amp: bool):
           double_total += decision.size(0)
 
   return {
-    'move_loss': move_loss_total / max(1, move_batches),
     'double_loss': double_loss_total / max(1, double_batches),
-    'move_acc': move_correct / max(1, move_total),
-    'double_acc': double_correct / max(1, double_total)
+    'double_acc': double_correct / max(1, double_total),
+    'value_loss': value_loss_total / max(1, value_batches)
   }
 
 
@@ -218,6 +203,7 @@ def main():
 
   val_ratio = config.get('eval_split', 0.1)
   seed = config.get('seed', 42)
+  value_target = config.get('value_target', 'game_result')
   batch_rows = config.get('parquet_batch_rows', 4096)
   train_dataset = AsymParquetIterableDataset(
     config['data_path'],
@@ -237,20 +223,20 @@ def main():
     train_dataset,
     batch_size=config.get('batch_size', 128),
     shuffle=False,
-    collate_fn=collate_batch
+    collate_fn=lambda batch: collate_batch(batch, value_target=value_target)
   )
   val_loader = DataLoader(
     val_dataset,
     batch_size=config.get('batch_size', 128),
     shuffle=False,
-    collate_fn=collate_batch
+    collate_fn=lambda batch: collate_batch(batch, value_target=value_target)
   )
 
   device = get_device(config)
   state_dim = int(config.get('state_dim', 0))
   if state_dim <= 0:
     raise ValueError('state_dim must be set in config when using iterable dataset')
-  model = AsymPolicyModel(state_dim=state_dim, move_dim=MOVE_FEATURE_DIM, hidden_size=config.get('hidden_size', 128))
+  model = AsymValueModel(state_dim=state_dim, hidden_size=config.get('hidden_size', 128))
   model.to(device)
   optimizer = torch.optim.Adam(model.parameters(), lr=config.get('learning_rate', 1e-3))
 
@@ -259,6 +245,7 @@ def main():
   os.makedirs(os.path.dirname(save_path), exist_ok=True)
   os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
   double_weight = config.get('double_loss_weight', 0.5)
+  value_weight = config.get('value_loss_weight', 1.0)
   use_amp = config.get('use_amp', device.type == 'cuda')
   grad_accum_steps = int(config.get('grad_accum_steps', 1))
   estimate_steps = int(config.get('estimate_steps', 10))
@@ -279,20 +266,25 @@ def main():
       optimizer,
       device,
       double_weight,
+      value_weight,
       use_amp=use_amp,
       grad_accum_steps=grad_accum_steps,
       estimate_steps=estimate_steps
     )
-    eval_metrics = eval_epoch(model, val_loader, device, double_weight, use_amp=use_amp)
-    loss_value = eval_metrics['move_loss'] + double_weight * eval_metrics['double_loss']
+    eval_metrics = eval_epoch(
+      model,
+      val_loader,
+      device,
+      use_amp=use_amp
+    )
+    loss_value = value_weight * eval_metrics['value_loss'] + double_weight * eval_metrics['double_loss']
 
     print(
       f"Epoch {epoch + 1}: "
-      f"train_move_loss={train_metrics['move_loss']:.4f} "
+      f"train_value_loss={train_metrics['value_loss']:.4f} "
       f"train_double_loss={train_metrics['double_loss']:.4f} "
-      f"val_move_loss={eval_metrics['move_loss']:.4f} "
+      f"val_value_loss={eval_metrics['value_loss']:.4f} "
       f"val_double_loss={eval_metrics['double_loss']:.4f} "
-      f"val_move_acc={eval_metrics['move_acc']:.3f} "
       f"val_double_acc={eval_metrics['double_acc']:.3f}"
     )
 

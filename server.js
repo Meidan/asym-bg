@@ -39,7 +39,7 @@ const BOT_POLICY = process.env.BOT_POLICY || 'heuristic';
 const BOT_HEURISTIC_POLICY = process.env.BOT_HEURISTIC_POLICY || 'gnubg';
 const BOT_GNUBG_TIMEOUT_RAW = Number(process.env.BOT_GNUBG_TIMEOUT_MS);
 const BOT_GNUBG_TIMEOUT_MS = Number.isFinite(BOT_GNUBG_TIMEOUT_RAW) ? BOT_GNUBG_TIMEOUT_RAW : undefined;
-const BOT_MODEL_MOVE_PATH = process.env.BOT_MODEL_MOVE_PATH || '';
+const BOT_MODEL_VALUE_PATH = process.env.BOT_MODEL_VALUE_PATH || process.env.BOT_MODEL_MOVE_PATH || '';
 const BOT_MODEL_DOUBLE_PATH = process.env.BOT_MODEL_DOUBLE_PATH || '';
 
 const healthServer = http.createServer((req, res) => {
@@ -491,9 +491,9 @@ function tryAutoRoll(game) {
 async function resolveBotPolicy(game) {
   if (!game.bot || !game.state || !game.match) return null;
   if (BOT_POLICY !== 'model') return null;
-  if (!BOT_MODEL_MOVE_PATH || !BOT_MODEL_DOUBLE_PATH) {
+  if (!BOT_MODEL_VALUE_PATH || !BOT_MODEL_DOUBLE_PATH) {
     if (!game.botModelWarning) {
-      console.warn('Model bot requested but BOT_MODEL_MOVE_PATH or BOT_MODEL_DOUBLE_PATH is missing. Falling back to heuristic.');
+      console.warn('Model bot requested but BOT_MODEL_VALUE_PATH or BOT_MODEL_DOUBLE_PATH is missing. Falling back to heuristic.');
       game.botModelWarning = true;
     }
     return null;
@@ -503,7 +503,7 @@ async function resolveBotPolicy(game) {
   if (game.botModelPolicyPromise) return game.botModelPolicyPromise;
 
   game.botModelPolicyPromise = createModelPolicy({
-    moveModelPath: BOT_MODEL_MOVE_PATH,
+    valueModelPath: BOT_MODEL_VALUE_PATH,
     doubleModelPath: BOT_MODEL_DOUBLE_PATH,
     getMatch: () => game.match,
     player: game.bot.player

@@ -5,12 +5,13 @@
   "learning_rate": 0.001,
   "hidden_size": 128,
   "state_dim": 73,
-  "move_dim": 13,
   "double_loss_weight": 0.5,
+  "value_loss_weight": 1.0,
+  "value_target": "game_result",
   "eval_split": 0.1,
   "seed": 42,
   "device": "auto",
-  "save_path": "ml/checkpoints/asym_policy.pt",
+  "save_path": "ml/checkpoints/asym_value.pt",
   "grad_accum_steps": 2,
   "use_amp": true
 }

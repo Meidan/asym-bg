@@ -16,8 +16,8 @@ const { createHeuristicController } = require('../src/bot/heuristics');
 const MATCHES = Number(process.env.MATCHES) || 200;
 const TARGET_SCORE = Number(process.env.TARGET_SCORE) || 5;
 const MODEL_ROLE = process.env.MODEL_ROLE || 'foresight'; // foresight | doubling
-const MOVE_MODEL = process.env.MOVE_MODEL || 'ml/checkpoints/asym_policy_move.onnx';
-const DOUBLE_MODEL = process.env.DOUBLE_MODEL || 'ml/checkpoints/asym_policy_double.onnx';
+const VALUE_MODEL = process.env.VALUE_MODEL || process.env.MOVE_MODEL || 'ml/checkpoints/asym_value.onnx';
+const DOUBLE_MODEL = process.env.DOUBLE_MODEL || 'ml/checkpoints/asym_value_double.onnx';
 const HEURISTIC_POLICY = (process.env.HEURISTIC_POLICY || 'simple').toLowerCase() === 'gnubg'
   ? 'gnubg'
   : 'simple';
@@ -28,7 +28,7 @@ async function createPlayers(match) {
   const roles = match.asymmetricRoles;
   const modelPlayer = MODEL_ROLE === 'doubling' ? roles.doublingPlayer : roles.foresightPlayer;
   const modelPolicy = await createModelPolicy({
-    moveModelPath: MOVE_MODEL,
+    valueModelPath: VALUE_MODEL,
     doubleModelPath: DOUBLE_MODEL,
     getMatch: () => match,
     player: modelPlayer

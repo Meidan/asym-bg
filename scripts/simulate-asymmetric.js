@@ -13,14 +13,12 @@ const { createMatch } = require('../src/engine/match');
 const { runAutomatedMatch } = require('../src/engine/automation');
 const { createHeuristicController } = require('../src/bot/heuristics');
 
-const MATCHES = Number(process.env.MATCHES) || 12;
-const TARGET_SCORE = Number(process.env.TARGET_SCORE) || 5;
-const THREADS = Math.max(1, Number(process.env.THREADS) || 4);
+const MATCHES = Number(process.env.MATCHES) || 160;
+const TARGET_SCORE = Number(process.env.TARGET_SCORE) || 13;
+const THREADS = Math.max(1, Number(process.env.THREADS) || 16);
 const DEFAULT_FORESIGHT_PLAYER = 'white';
 const DEFAULT_DOUBLING_PLAYER = 'black';
-const HEURISTIC_POLICY = (process.env.HEURISTIC_POLICY || 'simple').toLowerCase() === 'gnubg'
-  ? 'gnubg'
-  : 'simple';
+const HEURISTIC_POLICY = process.env.HEURISTIC_POLICY || 'gnubg';
 const GNUBG_TIMEOUT_RAW = Number(process.env.GNUBG_TIMEOUT_MS);
 const GNUBG_TIMEOUT_MS = Number.isFinite(GNUBG_TIMEOUT_RAW) ? GNUBG_TIMEOUT_RAW : undefined;
 

@@ -23,9 +23,9 @@ const LOG_EVERY = Number(process.env.LOG_EVERY) || 1;
 const MODEL_A_NAME = process.env.MODEL_A_NAME || 'modelA';
 const MODEL_B_NAME = process.env.MODEL_B_NAME || 'modelB';
 
-const MODEL_A_MOVE = process.env.MODEL_A_MOVE || 'ml/checkpoints/asym_policy_move.onnx';
-const MODEL_A_DOUBLE = process.env.MODEL_A_DOUBLE || 'ml/checkpoints/asym_policy_double.onnx';
-const MODEL_B_MOVE = process.env.MODEL_B_MOVE || MODEL_A_MOVE;
+const MODEL_A_VALUE = process.env.MODEL_A_VALUE || process.env.MODEL_A_MOVE || 'ml/checkpoints/asym_value.onnx';
+const MODEL_A_DOUBLE = process.env.MODEL_A_DOUBLE || 'ml/checkpoints/asym_value_double.onnx';
+const MODEL_B_VALUE = process.env.MODEL_B_VALUE || process.env.MODEL_B_MOVE || MODEL_A_VALUE;
 const MODEL_B_DOUBLE = process.env.MODEL_B_DOUBLE || MODEL_A_DOUBLE;
 
 const DEFAULT_ROLES = {
@@ -55,25 +55,25 @@ function eloDiffFromWinRate(rate) {
 
 async function loadPolicies(config, getMatch) {
   const modelAWhite = await createModelPolicy({
-    moveModelPath: config.modelAMove,
+    valueModelPath: config.modelAValue,
     doubleModelPath: config.modelADouble,
     player: 'white',
     getMatch
   });
   const modelABlack = await createModelPolicy({
-    moveModelPath: config.modelAMove,
+    valueModelPath: config.modelAValue,
     doubleModelPath: config.modelADouble,
     player: 'black',
     getMatch
   });
   const modelBWhite = await createModelPolicy({
-    moveModelPath: config.modelBMove,
+    valueModelPath: config.modelBValue,
     doubleModelPath: config.modelBDouble,
     player: 'white',
     getMatch
   });
   const modelBBlack = await createModelPolicy({
-    moveModelPath: config.modelBMove,
+    valueModelPath: config.modelBValue,
     doubleModelPath: config.modelBDouble,
     player: 'black',
     getMatch
@@ -234,9 +234,9 @@ async function run() {
     roleSplit: ROLE_SPLIT,
     modelAName: MODEL_A_NAME,
     modelBName: MODEL_B_NAME,
-    modelAMove: MODEL_A_MOVE,
+    modelAValue: MODEL_A_VALUE,
     modelADouble: MODEL_A_DOUBLE,
-    modelBMove: MODEL_B_MOVE,
+    modelBValue: MODEL_B_VALUE,
     modelBDouble: MODEL_B_DOUBLE,
     logEvery: LOG_EVERY,
     roles: DEFAULT_ROLES

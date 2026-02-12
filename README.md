@@ -67,7 +67,7 @@ Train + export ONNX:
 ```bash
 conda install --yes --file ml/requirements.txt
 python ml/train.py --config ml/config.json
-python ml/export_onnx.py --checkpoint ml/checkpoints/asym_policy.pt --config ml/config.json
+python ml/export_onnx.py --checkpoint ml/checkpoints/asym_value.pt --config ml/config.json
 ```
 
 Evaluate vs heuristic:
@@ -83,8 +83,8 @@ node scripts/eval-selfplay.js
 Enable model bot on server:
 ```
 BOT_POLICY=model
-BOT_MODEL_MOVE_PATH=ml/checkpoints/asym_policy_move.onnx
-BOT_MODEL_DOUBLE_PATH=ml/checkpoints/asym_policy_double.onnx
+BOT_MODEL_VALUE_PATH=ml/checkpoints/asym_value.onnx
+BOT_MODEL_DOUBLE_PATH=ml/checkpoints/asym_value_double.onnx
 ```
 Note: `onnxruntime-node` is an optional dependency. If it isn’t available (common on Alpine), the server falls back to heuristics.
 
