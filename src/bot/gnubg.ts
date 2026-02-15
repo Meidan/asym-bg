@@ -358,11 +358,18 @@ function parseDoubleDecision(output: string): { offer?: boolean; accept?: boolea
     result.offer = true;
   }
 
-  if (txt.includes('take') ) {
+  if (txt.includes('take') || txt.includes('beaver')) {
     result.accept = true;
-  } else if (txt.includes('drop')) {
+  } else if (txt.includes('drop') || txt.includes('pass')) {
     result.accept = false;
   }
+
+  if (typeof result.offer !== 'boolean' && typeof result.accept !== 'boolean') {
+    console.warn("failed parsing double decision")
+    console.warn(output);
+    console.warn(txt);
+  }
+
 
   return result;
 }

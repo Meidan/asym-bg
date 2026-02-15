@@ -24,9 +24,7 @@ const { hasLegalMoves } = require('./src/engine/moves');
 const { createMatch, updateMatchScore, canOfferDoubleNow } = require('./src/engine/match');
 const { getOpponent } = require('./src/engine/board');
 const { stepAutomatedTurn } = require('./src/engine/automation');
-const { createModelPolicy } = require('./src/bot/modelPolicy');
-const { createHeuristicController } = require('./src/bot/heuristics');
-const { shutdownGnubg } = require('./src/bot/gnubg');
+const { createAsymmetricBotController } = require('./src/bot/controllers');
 
 const PORT = process.env.WS_PORT || 8080;
 const HEALTH_PORT = process.env.HEALTH_PORT || 8081;
@@ -526,8 +524,21 @@ async function resolveBotPolicy(game) {
 async function createBotPlayers(game) {
   if (!game.bot || !game.state) return {};
   const botPlayer = game.bot.player;
-  const isAsymmetric = game.state.variant === 'asymmetric';
-  const isForesightBot = isAsymmetric && game.state.asymmetricRoles?.foresightPlayer === botPlayer;
+  const roles = game.state.asymmetricRoles;
+
+  if (game.state.variant === 'asymmetric' && roles) {
+    if (!game.botPlannedMoveState) {
+      game.botPlannedMoveState = { plannedMoves: null, plannedBoard: null };
+    }
+
+    const controller = createAsymmetricBotController(
+      botPlayer,
+      roles,
+      game.botPlannedMoveState
+    );
+
+    return botPlayer === 'white' ? { white: controller } : { black: controller };
+  }
 
   const modelPolicy = await resolveBotPolicy(game);
   if (modelPolicy) {
@@ -544,7 +555,7 @@ async function createBotPlayers(game) {
   }
 
   const controller = {
-    getMove: async (state, legalMoves) => {
+    getMove: async (_state, legalMoves) => {
       if (legalMoves.length === 0) return [];
       return legalMoves[Math.floor(Math.random() * legalMoves.length)];
     },

@@ -11,11 +11,11 @@ require('ts-node').register({
 const { Worker, isMainThread, parentPort, workerData } = require('worker_threads');
 const { createMatch } = require('../src/engine/match');
 const { runAutomatedMatch } = require('../src/engine/automation');
-const { createHeuristicController } = require('../src/bot/heuristics');
+const { createAsymmetricBotController } = require('../src/bot/controllers');
 
-const MATCHES = Number(process.env.MATCHES) || 12;
+const MATCHES = Number(process.env.MATCHES) || 1600;
 const TARGET_SCORE = Number(process.env.TARGET_SCORE) || 5;
-const THREADS = Math.max(1, Number(process.env.THREADS) || 4);
+const THREADS = Math.max(1, Number(process.env.THREADS) || 16);
 const DEFAULT_FORESIGHT_PLAYER = 'white';
 const DEFAULT_DOUBLING_PLAYER = 'black';
 const HEURISTIC_POLICY = (process.env.HEURISTIC_POLICY || 'simple').toLowerCase() === 'gnubg'
@@ -32,16 +32,8 @@ async function runMatches(matchCount, startIndex) {
     doublingPlayer: DEFAULT_DOUBLING_PLAYER
   };
   const players = {
-    [roles.foresightPlayer]: createHeuristicController({
-      role: 'foresight',
-      policy: HEURISTIC_POLICY,
-      gnubgTimeoutMs: GNUBG_TIMEOUT_MS
-    }),
-    [roles.doublingPlayer]: createHeuristicController({
-      role: 'doubling',
-      policy: HEURISTIC_POLICY,
-      gnubgTimeoutMs: GNUBG_TIMEOUT_MS
-    })
+    [roles.foresightPlayer]: createAsymmetricBotController(roles.foresightPlayer, roles),
+    [roles.doublingPlayer]: createAsymmetricBotController(roles.doublingPlayer, roles)
   };
 
   for (let i = 0; i < matchCount; i++) {
@@ -56,7 +48,7 @@ async function runMatches(matchCount, startIndex) {
     match = await runAutomatedMatch(match, players);
 
     const roleWinner = match.winner === match.asymmetricRoles.foresightPlayer ? 'foresight' : 'doubling';
-    console.log(`Match ${globalIndex + 1}: ${roleWinner} wins`);
+    console.log(`Match ${globalIndex + 1}: ${roleWinner} wins ${match.score.black}-${match.score.white}`);
 
     if (roleWinner === 'foresight') {
       foresightWins += 1;

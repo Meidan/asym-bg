@@ -350,7 +350,7 @@ export function shouldOfferDouble(state: GameState, player: Player): boolean {
   return score > 24;
 }
 
-export function shouldAcceptDouble(state: GameState, player: Player): boolean {
+function shouldAcceptDouble(state: GameState, player: Player): boolean {
   const board = state.board;
   const opponent = getOpponent(player);
   const pipDiff = countPips(board, opponent) - countPips(board, player);

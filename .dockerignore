@@ -1,6 +1,12 @@
-node_modules
+node_modules/**
+dist/**
+data/**
+ml/checkpoints/**
+ml/runs/**
+*.pt
+*.onnx
+ml/__pycache__/**
 npm-debug.log
-dist
 .git
 .gitignore
 .env

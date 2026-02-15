@@ -248,8 +248,17 @@ export function validateAndApplyMoves(state: GameState, moves: Move[]): MoveResu
   if (moves.length === 0) {
     const legalMoves = getLegalMoves(state);
     if (legalMoves.length === 0) {
-      // No legal moves available, turn passes
-      return { valid: true, newState: state };
+      // No legal moves available, turn passes. Return a cloned state so callers
+      // (e.g. projections) never mutate the original state object.
+      return {
+        valid: true,
+        newState: {
+          ...state,
+          board: cloneBoard(state.board),
+          unusedDice: [...state.unusedDice],
+          moveHistory: [...state.moveHistory]
+        }
+      };
     } else {
       return { valid: false, error: 'Must make a legal move when available' };
     }
@@ -259,7 +268,8 @@ export function validateAndApplyMoves(state: GameState, moves: Move[]): MoveResu
   const newState: GameState = {
     ...state,
     board: cloneBoard(state.board),
-    unusedDice: [...state.unusedDice]
+    unusedDice: [...state.unusedDice],
+    moveHistory: [...state.moveHistory]
   };
   
   // Validate that this move sequence is legal
