@@ -36,10 +36,15 @@ RUN mkdir -p /artifacts && \
     npm test | tee /artifacts/test-output.txt
 
 # Production stage
-FROM node:20-alpine
+FROM node:20-bookworm-slim
 
-# Install wget for healthchecks
-RUN apk add --no-cache wget
+# Install runtime deps: wget for healthchecks and gnubg for bot heuristic policy.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends wget gnubg && \
+    rm -rf /var/lib/apt/lists/*
+
+# Debian installs gnubg under /usr/games.
+ENV GNUBG_PATH=/usr/games/gnubg
 
 WORKDIR /app
 

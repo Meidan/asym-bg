@@ -53,6 +53,7 @@ class GnubgRunner {
     this.child.stderr.setEncoding('utf8');
     this.child.stdout.on('data', (chunk) => this.handleData(String(chunk)));
     this.child.stderr.on('data', (chunk) => this.handleData(String(chunk)));
+    this.child.on('error', (error) => this.handleFatal(error));
     this.child.on('close', (code, signal) => this.handleExit(code, signal));
     this.ready = this.enqueueInternal(`set prompt ${PROMPT_TOKEN}`, DEFAULT_TIMEOUT_MS)
       .then(() => undefined);
@@ -434,4 +435,3 @@ function getDoubleDecisionLine(output: string) {
   }
   return '';
 }
-
