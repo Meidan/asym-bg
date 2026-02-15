@@ -74,9 +74,84 @@ export interface DoublingCube {
  */
 export type GameVariant = 'standard' | 'asymmetric';
 
+export type AsymmetricRole = 'foresight' | 'doubling';
+
 export interface AsymmetricRoles {
-  foresightPlayer: Player; // sees opponent's dice, rolls for both
-  doublingPlayer: Player; // always owns doubling cube
+  white: AsymmetricRole;
+  black: AsymmetricRole;
+}
+
+export interface LegacyAsymmetricRoles {
+  foresightPlayer: Player;
+  doublingPlayer: Player;
+}
+
+export type AsymmetricRolesConfig = AsymmetricRoles | LegacyAsymmetricRoles;
+
+export function normalizeAsymmetricRoles(roles?: AsymmetricRolesConfig): AsymmetricRoles | undefined {
+  if (!roles) return undefined;
+
+  if ('white' in roles && 'black' in roles) {
+    return {
+      white: roles.white,
+      black: roles.black
+    };
+  }
+
+  if ('foresightPlayer' in roles && 'doublingPlayer' in roles) {
+    const whiteRole = roles.foresightPlayer === 'white'
+      ? 'foresight'
+      : roles.doublingPlayer === 'white'
+        ? 'doubling'
+        : undefined;
+    const blackRole = roles.foresightPlayer === 'black'
+      ? 'foresight'
+      : roles.doublingPlayer === 'black'
+        ? 'doubling'
+        : undefined;
+    if (!whiteRole || !blackRole) return undefined;
+    return {
+      white: whiteRole,
+      black: blackRole
+    };
+  }
+
+  return undefined;
+}
+
+export function getAsymmetricRoleForPlayer(roles: AsymmetricRoles, player: Player): AsymmetricRole {
+  return roles[player];
+}
+
+export function playerHasAsymmetricRole(
+  roles: AsymmetricRoles,
+  player: Player,
+  role: AsymmetricRole
+): boolean {
+  return roles[player] === role;
+}
+
+export function getSingleAsymmetricRolePlayer(
+  roles: AsymmetricRoles,
+  role: AsymmetricRole
+): Player | null {
+  const whiteHasRole = roles.white === role;
+  const blackHasRole = roles.black === role;
+  if (whiteHasRole === blackHasRole) return null;
+  return whiteHasRole ? 'white' : 'black';
+}
+
+export function isValidAsymmetricRoles(roles: AsymmetricRoles): boolean {
+  // The only invalid combination is Doubling vs Doubling.
+  return roles.white === 'foresight' || roles.black === 'foresight';
+}
+
+export function randomAsymmetricRoles(): AsymmetricRoles {
+  const options: AsymmetricRoles[] = [
+    { white: 'foresight', black: 'doubling' },
+    { white: 'doubling', black: 'foresight' }
+  ];
+  return options[Math.floor(Math.random() * options.length)];
 }
 
 /**
@@ -139,5 +214,5 @@ export interface GameConfig {
   variant: GameVariant;
   whitePlayer?: IPlayer;
   blackPlayer?: IPlayer;
-  asymmetricRoles?: AsymmetricRoles;
+  asymmetricRoles?: AsymmetricRolesConfig;
 }

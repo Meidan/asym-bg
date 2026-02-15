@@ -1,4 +1,12 @@
-import { AsymmetricRoles, GameState, IPlayer, Move, Player } from '../engine/types';
+import {
+  AsymmetricRoles,
+  GameState,
+  IPlayer,
+  Move,
+  Player,
+  getSingleAsymmetricRolePlayer,
+  playerHasAsymmetricRole
+} from '../engine/types';
 import { makeMove } from '../engine/game';
 import {
   chooseHeuristicMove,
@@ -31,8 +39,9 @@ export function createAsymmetricBotController(
     plannedBoard: null
   };
 
-  const isForesightBot = roles.foresightPlayer === botPlayer;
-  const isDoublingBot = roles.doublingPlayer === botPlayer;
+  const isForesightBot = playerHasAsymmetricRole(roles, botPlayer, 'foresight');
+  const isDoublingBot = playerHasAsymmetricRole(roles, botPlayer, 'doubling');
+  const fixedDoublingPlayer = getSingleAsymmetricRolePlayer(roles, 'doubling');
 
   const clearPlannedMove = () => {
     stateCache.plannedMoves = null;
@@ -78,7 +87,11 @@ export function createAsymmetricBotController(
     },
     offerDouble: async (state) => {
       if (state.variant !== 'asymmetric') return false;
-      if (!isDoublingBot || state.currentPlayer !== botPlayer || state.phase !== 'moving') return false;
+      if (state.currentPlayer !== botPlayer || state.phase !== 'moving') return false;
+      if (fixedDoublingPlayer && !isDoublingBot) return false;
+      if (!fixedDoublingPlayer && state.doublingCube.owner !== null && state.doublingCube.owner !== botPlayer) {
+        return false;
+      }
 
       const plannedMoves = chooseStrategicMove(state, []);
       stateCache.plannedMoves = plannedMoves;

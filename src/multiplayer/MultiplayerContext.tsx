@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
-import { GameState, Move } from '../engine/types';
+import { AsymmetricRoles, GameState, Move } from '../engine/types';
 import { MatchState } from '../engine/match';
 
 type Player = 'white' | 'black';
@@ -43,7 +43,8 @@ interface MultiplayerContextType {
     matchType: 'limited' | 'unlimited',
     targetScore?: number,
     timeControl?: TimeControl,
-    vsBot?: boolean
+    vsBot?: boolean,
+    asymmetricRoles?: AsymmetricRoles
   ) => void;
   joinGame: (gameId: string) => void;
   leaveGame: () => void;
@@ -183,7 +184,8 @@ export function MultiplayerProvider({ children }: { children: React.ReactNode })
     matchType: 'limited' | 'unlimited',
     targetScore?: number,
     timeControlOverride?: TimeControl,
-    vsBot?: boolean
+    vsBot?: boolean,
+    asymmetricRoles?: AsymmetricRoles
   ) => {
     sendMessage({
       type: 'CREATE_GAME',
@@ -191,7 +193,8 @@ export function MultiplayerProvider({ children }: { children: React.ReactNode })
       matchType,
       targetScore,
       timeControl: timeControlOverride,
-      vsBot: Boolean(vsBot)
+      vsBot: Boolean(vsBot),
+      asymmetricRoles
     });
   }, [sendMessage]);
 

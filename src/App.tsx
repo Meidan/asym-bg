@@ -125,7 +125,7 @@ function GameApp() {
 
   const isOpeningTurn = useMemo(() => {
     if (!gameState) return false;
-    return gameState.moveHistory.length === 0 && gameState.phase === 'rolling';
+    return gameState.moveHistory.length === 0;
   }, [gameState]);
 
   const canDoubleByMatchRules = useMemo(() => {

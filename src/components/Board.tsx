@@ -1,5 +1,13 @@
 import React, { useState, useCallback } from 'react';
-import { GameState, Move, Point, Player, getDiceValues } from '../engine/types';
+import {
+  GameState,
+  Move,
+  Point,
+  Player,
+  getDiceValues,
+  getSingleAsymmetricRolePlayer,
+  playerHasAsymmetricRole
+} from '../engine/types';
 import { getCheckerCount, getOpponent, playerPointToBoardPoint, boardPointToPlayerPoint, allCheckersInHomeBoard, isPointBlocked, hasCheckersOnBar, getBarPoint, countPips } from '../engine/board';
 import { generateMovesForDie } from '../engine/moves';
 import Checker from './Checker';
@@ -418,11 +426,25 @@ const Board: React.FC<BoardProps> = ({
               
               // ASYMMETRIC: Show opponent's dice if we're the foresight player
               if (baseGameState.variant === 'asymmetric' && 
-                  baseGameState.asymmetricRoles?.foresightPlayer === baseGameState.currentPlayer &&
+                  baseGameState.asymmetricRoles &&
+                  playerHasAsymmetricRole(baseGameState.asymmetricRoles, baseGameState.currentPlayer, 'foresight') &&
                   baseGameState.phase === 'moving') {
                 const opponentDiceObject = opponentPlayer === 'white' ? baseGameState.whiteDice! : baseGameState.blackDice!;
                 if (opponentDiceObject) {
                   const opponentDice = getDiceValues(opponentDiceObject);
+                  let showDoubleInForesightView = false;
+                  if (!doubleOffered && !isFirstTurn && isOurTurn && canDouble && selectedMoveSequence.length === 0) {
+                    const fixedDoublingPlayer = getSingleAsymmetricRolePlayer(baseGameState.asymmetricRoles, 'doubling');
+                    if (fixedDoublingPlayer) {
+                      showDoubleInForesightView = playerHasAsymmetricRole(baseGameState.asymmetricRoles, baseGameState.currentPlayer, 'doubling') &&
+                        !baseGameState.doubleOfferedThisTurn &&
+                        baseGameState.doublingCube.value < 64;
+                    } else {
+                      showDoubleInForesightView = (baseGameState.doublingCube.owner === null || baseGameState.doublingCube.owner === baseGameState.currentPlayer) &&
+                        !baseGameState.doubleOfferedThisTurn &&
+                        baseGameState.doublingCube.value < 64;
+                    }
+                  }
                   
                   return (
                     <div className="board-inline-group">
@@ -442,6 +464,14 @@ const Board: React.FC<BoardProps> = ({
                           onClick={onUndoMove}
                         >
                           ↶ undo
+                        </button>
+                      )}
+                      {showDoubleInForesightView && (
+                        <button
+                          className="board-inline-btn board-inline-double"
+                          onClick={onOfferDouble}
+                        >
+                          double
                         </button>
                       )}
                     </div>
@@ -498,9 +528,18 @@ const Board: React.FC<BoardProps> = ({
                     ? false
                     : canOfferDoubleInRolling;
                 } else if (baseGameState.phase === 'moving' && baseGameState.variant === 'asymmetric' && selectedMoveSequence.length === 0) {
-                  showDouble = baseGameState.asymmetricRoles?.doublingPlayer === baseGameState.currentPlayer &&
-                             !baseGameState.doubleOfferedThisTurn &&
-                             baseGameState.doublingCube.value < 64;
+                  if (baseGameState.asymmetricRoles) {
+                    const fixedDoublingPlayer = getSingleAsymmetricRolePlayer(baseGameState.asymmetricRoles, 'doubling');
+                    if (fixedDoublingPlayer) {
+                      showDouble = playerHasAsymmetricRole(baseGameState.asymmetricRoles, baseGameState.currentPlayer, 'doubling') &&
+                                 !baseGameState.doubleOfferedThisTurn &&
+                                 baseGameState.doublingCube.value < 64;
+                    } else {
+                      showDouble = (baseGameState.doublingCube.owner === null || baseGameState.doublingCube.owner === baseGameState.currentPlayer) &&
+                                 !baseGameState.doubleOfferedThisTurn &&
+                                 baseGameState.doublingCube.value < 64;
+                    }
+                  }
                 }
                 
                 if (showDouble) {
@@ -592,9 +631,7 @@ const Board: React.FC<BoardProps> = ({
 
         {/* Doubling cube - displayed on right side outside board */}
         {(() => {
-          const cubeOwner = baseGameState.variant === 'asymmetric'
-            ? baseGameState.asymmetricRoles?.doublingPlayer ?? null
-            : baseGameState.doublingCube.owner;
+          const cubeOwner = baseGameState.doublingCube.owner;
           const cubeColorClass = cubeOwner === 'white'
             ? 'cube-white'
             : cubeOwner === 'black'

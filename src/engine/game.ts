@@ -5,15 +5,18 @@
 import {
   GameState,
   GameConfig,
-  GameVariant,
   Player,
   Dice,
   Move,
   MoveResult,
   Turn,
-  DoublingCube,
   AsymmetricRoles,
-  getDiceValues
+  getDiceValues,
+  getSingleAsymmetricRolePlayer,
+  isValidAsymmetricRoles,
+  normalizeAsymmetricRoles,
+  playerHasAsymmetricRole,
+  randomAsymmetricRoles
 } from './types';
 import {
   createInitialBoard,
@@ -53,9 +56,13 @@ export function createGame(config: GameConfig): GameState {
   
   // Setup asymmetric variant roles if needed
   if (config.variant === 'asymmetric') {
-    state.asymmetricRoles = config.asymmetricRoles;
-    if (config.asymmetricRoles) {
-      state.doublingCube.owner = config.asymmetricRoles.doublingPlayer;
+    const roles = normalizeAsymmetricRoles(config.asymmetricRoles);
+    state.asymmetricRoles = roles;
+    if (roles) {
+      if (!isValidAsymmetricRoles(roles)) {
+        throw new Error('Invalid asymmetric roles: Doubling vs Doubling is not allowed');
+      }
+      state.doublingCube.owner = getAsymmetricCubeOwner(roles);
     } else {
       state.doublingCube.owner = null;
     }
@@ -73,20 +80,23 @@ export function rollForFirst(state: GameState): GameState {
   }
 
   if (state.variant === 'asymmetric') {
-    const roles = state.asymmetricRoles || (Math.random() < 0.5
-      ? { foresightPlayer: 'white', doublingPlayer: 'black' }
-      : { foresightPlayer: 'black', doublingPlayer: 'white' });
+    const roles = state.asymmetricRoles || randomAsymmetricRoles();
+    if (!isValidAsymmetricRoles(roles)) {
+      throw new Error('Invalid asymmetric roles: Doubling vs Doubling is not allowed');
+    }
+    const singleForesightPlayer = getSingleAsymmetricRolePlayer(roles, 'foresight');
+    const firstPlayer = singleForesightPlayer || (Math.random() < 0.5 ? 'white' : 'black');
 
     return {
       ...state,
-      currentPlayer: roles.foresightPlayer,
+      currentPlayer: firstPlayer,
       phase: 'rolling',
       whiteDice: null,
       blackDice: null,
       asymmetricRoles: roles,
       doublingCube: {
         ...state.doublingCube,
-        owner: roles.doublingPlayer
+        owner: getAsymmetricCubeOwner(roles)
       }
     };
   }
@@ -137,6 +147,11 @@ function rollDiceNoDoubles(): Dice {
   return dice;
 }
 
+function getAsymmetricCubeOwner(roles: AsymmetricRoles | undefined): Player | null {
+  if (!roles) return null;
+  return getSingleAsymmetricRolePlayer(roles, 'doubling');
+}
+
 /**
  * Start a turn by rolling dice
  */
@@ -148,24 +163,35 @@ export function rollTurn(state: GameState): GameState {
   const openingTurn = state.moveHistory.length === 0;
 
   if (state.variant === 'asymmetric' && state.asymmetricRoles) {
-    if (state.currentPlayer === state.asymmetricRoles.foresightPlayer) {
-      const myDice = openingTurn ? rollDiceNoDoubles() : rollDice();
-      const opponentDice = rollDice();
+    const roles = state.asymmetricRoles;
+    const currentPlayer = state.currentPlayer;
+    const opponent = getOpponent(currentPlayer);
+    const currentDice = openingTurn ? rollDiceNoDoubles() : rollDice();
+    const currentIsForesight = playerHasAsymmetricRole(roles, currentPlayer, 'foresight');
+    const opponentIsForesight = playerHasAsymmetricRole(roles, opponent, 'foresight');
+
+    if (currentIsForesight) {
+      const existingOpponentDice = opponent === 'white' ? state.whiteDice : state.blackDice;
+      const shouldRollOpponentDiceNow = !opponentIsForesight || openingTurn || !existingOpponentDice;
+      const opponentDice = shouldRollOpponentDiceNow ? rollDice() : existingOpponentDice;
 
       return {
         ...state,
-        whiteDice: state.currentPlayer === 'white' ? myDice : opponentDice,
-        blackDice: state.currentPlayer === 'black' ? myDice : opponentDice,
-        unusedDice: getDiceValues(myDice),
+        whiteDice: currentPlayer === 'white'
+          ? currentDice
+          : opponentDice,
+        blackDice: currentPlayer === 'black'
+          ? currentDice
+          : opponentDice,
+        unusedDice: getDiceValues(currentDice),
         phase: 'moving'
       };
     }
 
-    const currentDice = openingTurn ? rollDiceNoDoubles() : rollDice();
     return {
       ...state,
-      whiteDice: state.currentPlayer === 'white' ? currentDice : null,
-      blackDice: state.currentPlayer === 'black' ? currentDice : null,
+      whiteDice: currentPlayer === 'white' ? currentDice : state.whiteDice,
+      blackDice: currentPlayer === 'black' ? currentDice : state.blackDice,
       unusedDice: getDiceValues(currentDice),
       phase: 'moving'
     };
@@ -224,26 +250,55 @@ export function makeMove(state: GameState, moves: Move[]): MoveResult {
       result.newState.pointsAwarded = cubeValue * winTypeMultiplier;
     } else {
       // Switch to next player
-      result.newState.currentPlayer = getOpponent(state.currentPlayer);
+      const nextPlayer = getOpponent(state.currentPlayer);
+      result.newState.currentPlayer = nextPlayer;
       
-      // In asymmetric variant: opponent goes directly to moving phase
-      // (their dice were already rolled by foresight player)
       if (state.variant === 'asymmetric' && state.asymmetricRoles) {
-        const nextPlayer = result.newState.currentPlayer;
-        const isForesightPlayer = nextPlayer === state.asymmetricRoles.foresightPlayer;
-        
-        if (isForesightPlayer) {
-          // Foresight player needs to roll new dice
+        const roles = state.asymmetricRoles;
+        const movedPlayer = state.currentPlayer;
+        const movedPlayerIsForesight = playerHasAsymmetricRole(roles, movedPlayer, 'foresight');
+        const nextPlayerIsForesight = playerHasAsymmetricRole(roles, nextPlayer, 'foresight');
+
+        // Clear the dice consumed by the player who just moved.
+        if (movedPlayer === 'white') {
+          result.newState.whiteDice = null;
+        } else {
+          result.newState.blackDice = null;
+        }
+
+        // Foresight vs Foresight:
+        // keep both players' next dice visible each turn.
+        if (movedPlayerIsForesight && nextPlayerIsForesight) {
+          const nextPlayerDice = nextPlayer === 'white' ? result.newState.whiteDice : result.newState.blackDice;
+          if (!nextPlayerDice) {
+            const rolledForNextPlayer = rollDice();
+            if (nextPlayer === 'white') {
+              result.newState.whiteDice = rolledForNextPlayer;
+            } else {
+              result.newState.blackDice = rolledForNextPlayer;
+            }
+          }
+
+          const movedPlayerNextDice = movedPlayer === 'white' ? result.newState.whiteDice : result.newState.blackDice;
+          if (!movedPlayerNextDice) {
+            const rolledForMovedPlayer = rollDice();
+            if (movedPlayer === 'white') {
+              result.newState.whiteDice = rolledForMovedPlayer;
+            } else {
+              result.newState.blackDice = rolledForMovedPlayer;
+            }
+          }
+        }
+
+        const nextDice = nextPlayer === 'white' ? result.newState.whiteDice : result.newState.blackDice;
+        if (nextDice) {
+          result.newState.phase = 'moving';
+          result.newState.unusedDice = getDiceValues(nextDice);
+        } else {
           result.newState.phase = 'rolling';
           result.newState.unusedDice = [];
           result.newState.whiteDice = null;
           result.newState.blackDice = null;
-        } else {
-          // Opponent goes directly to moving (their dice were already rolled)
-          const opponentDice = nextPlayer === 'white' ? result.newState.whiteDice : result.newState.blackDice;
-          result.newState.phase = 'moving';
-          result.newState.unusedDice = opponentDice ? getDiceValues(opponentDice) : [];
-          result.newState.doubleOfferedThisTurn = false; // Reset for new turn
         }
       } else {
         // Standard variant: opponent needs to roll
@@ -277,9 +332,18 @@ export function offerDouble(state: GameState): GameState {
   
   // Check if current player can double
   if (state.variant === 'asymmetric' && state.asymmetricRoles) {
-    // Only doubling player can double, and only once per turn
-    if (state.currentPlayer !== state.asymmetricRoles.doublingPlayer) {
-      throw new Error('Only doubling player can double in asymmetric variant');
+    const fixedDoublingPlayer = getSingleAsymmetricRolePlayer(state.asymmetricRoles, 'doubling');
+
+    // Foresight vs Doubling keeps fixed cube owner.
+    if (fixedDoublingPlayer) {
+      if (state.currentPlayer !== fixedDoublingPlayer) {
+        throw new Error('Only doubling player can double in asymmetric variant');
+      }
+    } else {
+      // Foresight vs Foresight uses standard ownership checks.
+      if (cube.owner !== null && cube.owner !== state.currentPlayer) {
+        throw new Error('You do not own the doubling cube');
+      }
     }
     if (state.doubleOfferedThisTurn) {
       throw new Error('Can only offer double once per turn');
@@ -323,12 +387,25 @@ export function respondToDouble(state: GameState, accept: boolean): GameState {
   
   // Accepting - continue with doubled stakes
   if (state.variant === 'asymmetric' && state.asymmetricRoles) {
+    const fixedDoublingPlayer = getSingleAsymmetricRolePlayer(state.asymmetricRoles, 'doubling');
+    if (!fixedDoublingPlayer) {
+      // Foresight vs Foresight: standard transfer to accepter.
+      return {
+        ...state,
+        stakes: state.doublingCube.value,
+        doublingCube: {
+          ...state.doublingCube,
+          owner: getOpponent(state.currentPlayer)
+        }
+      };
+    }
+
     return {
       ...state,
       stakes: state.doublingCube.value,
       doublingCube: {
         ...state.doublingCube,
-        owner: state.asymmetricRoles.doublingPlayer
+        owner: getAsymmetricCubeOwner(state.asymmetricRoles)
       }
     };
   }

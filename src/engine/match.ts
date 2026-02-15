@@ -1,4 +1,14 @@
-import { AsymmetricRoles, GameState, Player } from './types';
+import {
+  AsymmetricRoles,
+  AsymmetricRolesConfig,
+  GameState,
+  Player,
+  getSingleAsymmetricRolePlayer,
+  isValidAsymmetricRoles,
+  normalizeAsymmetricRoles,
+  playerHasAsymmetricRole,
+  randomAsymmetricRoles
+} from './types';
 
 export type MatchType = 'limited' | 'unlimited';
 
@@ -6,7 +16,7 @@ export interface MatchConfig {
   type: MatchType;
   targetScore?: number; // For limited matches (1, 3, 5, 7, 9)
   variant: 'standard' | 'asymmetric';
-  asymmetricRoles?: AsymmetricRoles;
+  asymmetricRoles?: AsymmetricRolesConfig;
 }
 
 export interface MatchScore {
@@ -25,11 +35,13 @@ export interface MatchState {
 }
 
 export function createMatch(config: MatchConfig): MatchState {
+  const normalizedRoles = normalizeAsymmetricRoles(config.asymmetricRoles);
   const roles = config.variant === 'asymmetric'
-    ? config.asymmetricRoles || (Math.random() < 0.5
-      ? { foresightPlayer: 'white', doublingPlayer: 'black' }
-      : { foresightPlayer: 'black', doublingPlayer: 'white' })
+    ? normalizedRoles || randomAsymmetricRoles()
     : undefined;
+  if (roles && !isValidAsymmetricRoles(roles)) {
+    throw new Error('Invalid asymmetric roles: Doubling vs Doubling is not allowed');
+  }
   return {
     config,
     score: { white: 0, black: 0 },
@@ -139,8 +151,16 @@ export function canOfferDoubleNow(
   if (!matchAllows) return false;
 
   if (state.variant === 'asymmetric') {
-    const doublingPlayer = state.asymmetricRoles?.doublingPlayer;
-    if (!doublingPlayer || doublingPlayer !== currentPlayer) return false;
+    if (!state.asymmetricRoles) return false;
+
+    const fixedDoublingPlayer = getSingleAsymmetricRolePlayer(state.asymmetricRoles, 'doubling');
+    if (fixedDoublingPlayer) {
+      if (!playerHasAsymmetricRole(state.asymmetricRoles, currentPlayer, 'doubling')) return false;
+    } else {
+      // Foresight vs Foresight: standard cube ownership, but in moving phase.
+      if (state.doublingCube.owner !== null && state.doublingCube.owner !== currentPlayer) return false;
+    }
+
     if (state.doubleOfferedThisTurn) return false;
     return state.phase === 'moving';
   }

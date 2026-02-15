@@ -1,4 +1,4 @@
-import { GameState, Move, Player } from './types';
+import { GameState, Move, Player, playerHasAsymmetricRole } from './types';
 import { MatchState } from './match';
 
 export const STATE_VECTOR_LENGTH = 73;
@@ -64,13 +64,14 @@ export function encodeState(state: GameState, match: MatchState, actor: Player):
   // Asymmetric metadata
   const isAsymmetric = state.variant === 'asymmetric';
   features.push(isAsymmetric ? 1 : 0);
-  features.push(state.asymmetricRoles?.foresightPlayer === 'white' ? 1 : 0);
-  features.push(state.asymmetricRoles?.doublingPlayer === 'white' ? 1 : 0);
-  features.push(state.asymmetricRoles?.foresightPlayer === actor ? 1 : 0);
-  features.push(state.asymmetricRoles?.doublingPlayer === actor ? 1 : 0);
+  features.push(state.asymmetricRoles ? (playerHasAsymmetricRole(state.asymmetricRoles, 'white', 'foresight') ? 1 : 0) : 0);
+  features.push(state.asymmetricRoles ? (playerHasAsymmetricRole(state.asymmetricRoles, 'white', 'doubling') ? 1 : 0) : 0);
+  features.push(state.asymmetricRoles ? (playerHasAsymmetricRole(state.asymmetricRoles, actor, 'foresight') ? 1 : 0) : 0);
+  features.push(state.asymmetricRoles ? (playerHasAsymmetricRole(state.asymmetricRoles, actor, 'doubling') ? 1 : 0) : 0);
   const opponentDiceKnown = Boolean(
     isAsymmetric &&
-    state.asymmetricRoles?.foresightPlayer === actor &&
+    state.asymmetricRoles &&
+    playerHasAsymmetricRole(state.asymmetricRoles, actor, 'foresight') &&
     state.whiteDice &&
     state.blackDice
   );

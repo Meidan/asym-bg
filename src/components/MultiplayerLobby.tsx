@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useMultiplayer } from '../multiplayer/MultiplayerContext';
+import { AsymmetricRole } from '../engine/types';
 import './MultiplayerLobby.css';
 
 interface MultiplayerLobbyProps {
@@ -24,8 +25,15 @@ export default function MultiplayerLobby({ onGameStart }: MultiplayerLobbyProps)
   const [unlimitedMinutes, setUnlimitedMinutes] = useState(1);
   const [delaySeconds, setDelaySeconds] = useState(5);
   const [playVsBot, setPlayVsBot] = useState(false);
+  const [whiteRole, setWhiteRole] = useState<AsymmetricRole>('foresight');
+  const [blackRole, setBlackRole] = useState<AsymmetricRole>('doubling');
+
+  const invalidRoleCombo = selectedVariant === 'asymmetric' &&
+    whiteRole === 'doubling' &&
+    blackRole === 'doubling';
   
   const handleCreateGame = () => {
+    if (invalidRoleCombo) return;
     const timeControl = {
       perPointMs: Math.max(0.1, minutesPerPoint) * 60_000,
       unlimitedMs: Math.max(0.1, unlimitedMinutes) * 60_000,
@@ -36,7 +44,10 @@ export default function MultiplayerLobby({ onGameStart }: MultiplayerLobbyProps)
       matchType,
       matchType === 'limited' ? targetScore : undefined,
       timeControl,
-      playVsBot
+      playVsBot,
+      selectedVariant === 'asymmetric'
+        ? { white: whiteRole, black: blackRole }
+        : undefined
     );
   };
   
@@ -170,6 +181,39 @@ export default function MultiplayerLobby({ onGameStart }: MultiplayerLobbyProps)
             </div>
           </div>
 
+          {selectedVariant === 'asymmetric' && (
+            <div className="setting-group">
+              <label className="setting-label">Asymmetric Roles:</label>
+              <div className="variant-selector role-selector">
+                <label className="radio-label role-select-label">
+                  <span>You (White)</span>
+                  <select
+                    className="score-select"
+                    value={whiteRole}
+                    onChange={(e) => setWhiteRole(e.target.value as AsymmetricRole)}
+                  >
+                    <option value="foresight">Foresight</option>
+                    <option value="doubling">Doubling</option>
+                  </select>
+                </label>
+                <label className="radio-label role-select-label">
+                  <span>Opponent (Black)</span>
+                  <select
+                    className="score-select"
+                    value={blackRole}
+                    onChange={(e) => setBlackRole(e.target.value as AsymmetricRole)}
+                  >
+                    <option value="foresight">Foresight</option>
+                    <option value="doubling">Doubling</option>
+                  </select>
+                </label>
+              </div>
+              {invalidRoleCombo && (
+                <p className="role-error">Doubling vs Doubling is not allowed.</p>
+              )}
+            </div>
+          )}
+
           <div className="setting-group">
             <label className="setting-label">Clock Settings:</label>
             <div className="variant-selector">
@@ -220,7 +264,11 @@ export default function MultiplayerLobby({ onGameStart }: MultiplayerLobbyProps)
             </div>
           </div>
           
-          <button className="btn btn-primary btn-large" onClick={handleCreateGame}>
+          <button
+            className="btn btn-primary btn-large"
+            onClick={handleCreateGame}
+            disabled={invalidRoleCombo}
+          >
             Create Game
           </button>
         </div>

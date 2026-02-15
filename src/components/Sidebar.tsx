@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { GameState } from '../engine/types';
+import { GameState, Player } from '../engine/types';
 import './Sidebar.css';
 
 interface SidebarProps {
@@ -10,6 +10,11 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ gameState, onStartGame, hideSetup = false }) => {
   const [showRules, setShowRules] = useState(false);
+  const asymmetricPlayers: Player[] = ['white', 'black'];
+  const hasDoublingRole = Boolean(
+    gameState.asymmetricRoles &&
+    asymmetricPlayers.some((player) => gameState.asymmetricRoles?.[player] === 'doubling')
+  );
 
   return (
     <div className="sidebar">
@@ -41,24 +46,22 @@ const Sidebar: React.FC<SidebarProps> = ({ gameState, onStartGame, hideSetup = f
         <div className="sidebar-section roles-section">
           <h3 className="sidebar-subtitle">Player Roles</h3>
           <div className="role-info">
-            <div className={`role-card role-${gameState.asymmetricRoles.foresightPlayer}`}>
-              <div className="role-title">👁️ Foresight Player</div>
-              <div className="role-player">
-                {gameState.asymmetricRoles.foresightPlayer.toUpperCase()}
-              </div>
-              <div className="role-description">
-                Rolls both dice sets. Sees opponent's roll before moving.
-              </div>
-            </div>
-            <div className={`role-card role-${gameState.asymmetricRoles.doublingPlayer}`}>
-              <div className="role-title">×2 Doubling Player</div>
-              <div className="role-player">
-                {gameState.asymmetricRoles.doublingPlayer.toUpperCase()}
-              </div>
-              <div className="role-description">
-                Always owns the cube. Can double anytime.
-              </div>
-            </div>
+            {asymmetricPlayers.map((rolePlayer) => {
+              const role = gameState.asymmetricRoles?.[rolePlayer] || 'foresight';
+              const roleLabel = role === 'foresight' ? '👁️ Foresight' : '×2 Doubling';
+              const roleDescription = role === 'foresight'
+                ? 'Sees opponent pre-rolls and can roll ahead in foresight mirrors.'
+                : 'Owns the doubling cube and can offer doubles on moving turns.';
+              return (
+                <div key={rolePlayer} className={`role-card role-${rolePlayer}`}>
+                  <div className="role-title">{roleLabel} Role</div>
+                  <div className="role-player">
+                    {rolePlayer.toUpperCase()}
+                  </div>
+                  <div className="role-description">{roleDescription}</div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -120,16 +123,18 @@ const Sidebar: React.FC<SidebarProps> = ({ gameState, onStartGame, hideSetup = f
                 <h4>Asymmetric Variant</h4>
                 <p><strong>Foresight Player:</strong></p>
                 <ul>
-                  <li>Rolls two sets of dice each turn</li>
-                  <li>Sees opponent's dice before moving</li>
-                  <li>Cannot use the doubling cube</li>
+                  <li>Sees opponent dice before moving.</li>
+                  <li>In Foresight vs Doubling, the foresight player rolls for both players.</li>
+                  <li>In Foresight vs Foresight, the opening roll sets both players; then each player rolls the opponent&apos;s next turn.</li>
                 </ul>
                 <p><strong>Doubling Player:</strong></p>
                 <ul>
-                  <li>Always owns the doubling cube</li>
-                  <li>Can double at any time</li>
-                  <li>Uses pre-rolled dice</li>
+                  <li>Owns the doubling cube for the whole game.</li>
+                  <li>Can offer doubles at the start of moving turns.</li>
                 </ul>
+                {!hasDoublingRole && (
+                  <p><strong>Foresight vs Foresight:</strong> doubling follows standard cube ownership rules.</p>
+                )}
               </>
             ) : (
               <>

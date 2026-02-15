@@ -150,7 +150,8 @@ wss.on('connection', (ws) => {
 
 function handleCreateGame(ws, message) {
   const gameId = generateGameId();
-  const { variant = 'standard', matchType = 'unlimited', targetScore, timeControl, vsBot } = message;
+  const { variant = 'standard', matchType = 'unlimited', targetScore, timeControl, vsBot, asymmetricRoles } = message;
+  const sanitizedRoles = sanitizeAsymmetricRoles(variant, asymmetricRoles);
   const sanitizedTimeControl = sanitizeTimeControl(timeControl, matchType, targetScore);
   const initialBankMs = matchType === 'limited' && targetScore
     ? sanitizedTimeControl.perPointMs * targetScore
@@ -163,6 +164,7 @@ function handleCreateGame(ws, message) {
     bot: vsBot ? { player: 'black', acceptRate: BOT_ACCEPT_RATE } : null,
     botDelayMs: vsBot ? BOT_HUMAN_DELAY_MS : 0,
     variant,
+    asymmetricRoles: sanitizedRoles,
     matchType,
     targetScore,
     state: null,
@@ -393,7 +395,8 @@ function initializeMatch(game) {
   const match = createMatch({
     type: game.matchType,
     targetScore: game.targetScore,
-    variant: game.variant
+    variant: game.variant,
+    asymmetricRoles: game.asymmetricRoles
   });
   const state = rollForFirst(createGame({ variant: game.variant, asymmetricRoles: match.asymmetricRoles }));
   game.state = state;
@@ -731,6 +734,23 @@ function sanitizeTimeControl(timeControl, matchType, targetScore) {
     unlimitedMs,
     delayMs
   };
+}
+
+function sanitizeAsymmetricRoles(variant, asymmetricRoles) {
+  if (variant !== 'asymmetric') return undefined;
+  if (!asymmetricRoles) return undefined;
+
+  const white = asymmetricRoles.white;
+  const black = asymmetricRoles.black;
+  const validRole = (value) => value === 'foresight' || value === 'doubling';
+  if (!validRole(white) || !validRole(black)) {
+    throw new Error('Invalid asymmetric roles');
+  }
+  if (white === 'doubling' && black === 'doubling') {
+    throw new Error('Doubling vs Doubling is not allowed');
+  }
+
+  return { white, black };
 }
 
 function clampNumber(value, min, max, fallback) {
